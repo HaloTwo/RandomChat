@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>모먼트 설치 · 공기계 테스트</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .install-page{max-width:680px;margin:0 auto;padding:72px 20px}.install-page h1{font-size:42px;line-height:1.15;margin:12px 0}.install-steps{padding-left:24px;line-height:1.8}.install-steps li{margin:12px 0}.install-address{padding:14px;border-radius:12px;background:#eff6ef;font-weight:800;overflow-wrap:anywhere}.install-note{padding:15px;border-left:4px solid #d69d27;background:#fff8e8}.install-page .primary{display:inline-flex;margin:12px 0 26px;text-decoration:none}.install-page footer{margin-top:42px;color:#718077;font-size:13px}
+  </style>
+</head>
+<body>
+  <main class="install-page">
+    <div class="eyebrow">MOMENT / LOCAL ANDROID TEST</div>
+    <h1>공기계에<br><em>모먼트</em> 설치하기</h1>
+    <p>이 페이지는 같은 집 공유기에 연결된 공기계용 개발 테스트 안내입니다.</p>
+    <a class="primary" href="/app.apk" download>APK 다운로드 ↗</a>
+    <ol class="install-steps">
+      <li>위 <b>APK 다운로드</b>를 누릅니다.</li>
+      <li>다운로드가 끝나면 알림이나 파일 앱에서 <code>moment-local-debug.apk</code>를 누릅니다.</li>
+      <li>설치 허용을 묻는 경우, 이 브라우저 또는 파일 앱의 <b>이 출처의 앱 설치 허용</b>을 켭니다.</li>
+      <li>설치 후 <b>모먼트 로컬</b>을 열고 아래 서버 주소를 입력합니다.</li>
+      <li><b>서버 연결 확인 → 테스트 계정 만들기</b> 순서로 누릅니다.</li>
+    </ol>
+    <div class="install-address" id="server-address"></div>
+    <p class="install-note">서버 연결 확인이 실패하면 PC와 공기계가 같은 공유기에 있는지 확인하세요. 집 공유기일 때만 PC Windows 네트워크를 개인으로 바꾸고 방화벽 안내를 따르세요.</p>
+    <footer>개발용 로컬 앱입니다. 실제 개인정보나 타인의 사진·영상은 올리지 마세요.</footer>
+  </main>
+  <script>document.getElementById('server-address').textContent = `앱에 입력할 서버 주소: ${location.origin}`;</script>
+</body>
+</html>

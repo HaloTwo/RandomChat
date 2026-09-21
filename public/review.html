@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>운영 검토 · 모먼트</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/review.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="모먼트 홈"><span class="brand-mark">✳</span> 모먼트 <small>LOCAL DEMO</small></a>
+    <span class="header-note">신고·사진·영상 검토</span>
+  </header>
+  <main class="review-main">
+    <div class="page-intro"><div><div class="eyebrow">CONTENT REVIEW / LOCAL ONLY</div><h1>운영 검토</h1><p class="lead">관리자 대화 조회와 배정된 신고·미디어 검토를 진행합니다.</p></div></div>
+    <div id="review-flash" class="flash hidden" role="status"></div>
+    <section id="review-login" class="panel review-login">
+      <div class="section-label">담당자 인증</div>
+      <h2>토큰 입력</h2>
+      <p>로컬 명령으로 발급한 담당자 토큰을 입력하세요. 이 화면은 토큰을 저장하지 않습니다.</p>
+      <form id="review-login-form" class="stack">
+        <label>담당자 토큰 <input id="review-token" type="password" autocomplete="off" required></label>
+        <button class="primary" type="submit">관리자 로그인 <span>↗</span></button>
+      </form>
+    </section>
+    <section id="review-workspace" class="hidden">
+      <div class="review-toolbar"><span>관리자 대화 조회</span><button id="rooms-reload" class="secondary" type="button">대화 목록 새로고침</button></div>
+      <p>현재 저장된 텍스트 대화를 조회합니다. 삭제된 메시지는 복구되지 않으며, 본문 열람 기록은 서버에 남습니다.</p>
+      <div class="review-grid">
+        <section class="panel review-list-panel"><div id="admin-rooms" class="review-list"></div><button id="rooms-more" class="secondary" type="button">다음 대화 목록</button></section>
+        <section class="panel review-detail-panel"><h2 id="admin-room-title">대화방을 선택하세요</h2><div id="admin-messages"></div><button id="messages-more" class="secondary hidden" type="button">다음 메시지</button></section>
+      </div>
+      <div class="review-toolbar"><span>배정된 신고</span><div><button id="review-refresh" class="secondary" type="button">새로고침</button><button id="review-logout" class="text-button" type="button">토큰 지우기</button></div></div>
+      <div class="review-grid">
+        <section class="panel review-list-panel"><div id="review-list" class="review-list"></div></section>
+        <section class="panel review-detail-panel">
+          <div id="review-empty" class="review-empty">왼쪽에서 신고를 선택하세요.</div>
+          <div id="review-detail" class="hidden">
+            <div class="section-label">선택한 신고</div>
+            <h2 id="review-status"></h2>
+            <p class="review-meta">접수 <time id="review-created"></time></p>
+            <h3>신고 사유</h3>
+            <p id="review-reason" class="review-reason"></p>
+            <div id="review-closed" class="hidden"><h3>처리 기록</h3><p id="review-resolution" class="review-reason"></p></div>
+            <form id="review-close-form" class="stack"><label>처리 기록 <textarea id="review-close-reason" maxlength="300" rows="4" required placeholder="검토 결과를 기록하세요"></textarea></label><button class="primary" type="submit">검토 완료로 처리</button></form>
+          </div>
+        </section>
+      </div>
+      <div class="review-toolbar"><span>채팅 첨부 사진</span></div>
+      <div class="review-grid">
+        <section class="panel review-list-panel"><div id="photo-list" class="review-list"></div></section>
+        <section class="panel review-detail-panel">
+          <div id="photo-empty" class="review-empty">왼쪽에서 검토 대기 사진을 선택하세요.</div>
+          <div id="photo-detail" class="hidden">
+            <div class="section-label">선택한 사진</div>
+            <h2>내용 검토</h2>
+            <p id="photo-meta" class="review-meta"></p>
+            <img id="photo-preview" class="review-photo" alt="검토 중인 사진">
+            <div class="review-actions"><button id="photo-approve" class="primary" type="button">승인</button><button id="photo-reject" class="secondary danger" type="button">거절·삭제</button></div>
+          </div>
+        </section>
+      </div>
+      <div class="review-toolbar"><span>프로필 등록 사진</span></div>
+      <div class="review-grid">
+        <section class="panel review-list-panel"><div id="profile-photo-list" class="review-list"></div></section>
+        <section class="panel review-detail-panel">
+          <div id="profile-photo-empty" class="review-empty">왼쪽에서 검토 대기 프로필 사진을 선택하세요.</div>
+          <div id="profile-photo-detail" class="hidden">
+            <div class="section-label">연결 수락 후 공개</div>
+            <h2>프로필 사진 검토</h2>
+            <p id="profile-photo-meta" class="review-meta"></p>
+            <img id="profile-photo-preview" class="review-photo" alt="검토 중인 프로필 사진">
+            <div class="review-actions"><button id="profile-photo-approve" class="primary" type="button">승인</button><button id="profile-photo-reject" class="secondary danger" type="button">거절·삭제</button></div>
+          </div>
+        </section>
+      </div>
+      <div class="review-toolbar"><span>계속 대화 영상</span></div>
+      <div class="review-grid">
+        <section class="panel review-list-panel"><div id="video-list" class="review-list"></div></section>
+        <section class="panel review-detail-panel">
+          <div id="video-empty" class="review-empty">왼쪽에서 검토 대기 영상을 선택하세요.</div>
+          <div id="video-detail" class="hidden">
+            <div class="section-label">연결 수락 후 공개</div>
+            <h2>영상 검토</h2>
+            <p id="video-meta" class="review-meta"></p>
+            <video id="video-preview" class="review-photo" controls controlslist="nodownload" disablepictureinpicture preload="none"></video>
+            <div class="review-actions"><button id="video-approve" class="primary" type="button">승인</button><button id="video-reject" class="secondary danger" type="button">거절·삭제</button></div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+  <footer>모먼트 · 내 PC에서만 실행되는 개발용 프로토타입</footer>
+</body>
+</html>

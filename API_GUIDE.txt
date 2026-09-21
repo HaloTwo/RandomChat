@@ -1,0 +1,54 @@
+모먼트 로컬 테스트 · 토큰/API 메모
+
+1. 사용자 토큰
+- Android에서 [테스트 계정 만들기]를 누르면 서버가 토큰을 발급하고 앱 메모리에 보관합니다.
+- Android 앱을 완전히 종료하면 토큰이 사라집니다. 현재는 재로그인 기능이 없어 새 테스트 계정을 만듭니다.
+- Android의 [서버 연결 확인]이 성공하면 서버 주소만 기기에 저장합니다. 주소는 토큰이 아니며 다음 실행 때 자동 입력됩니다.
+- PC 웹에서는 각 탭의 sessionStorage에 저장됩니다. 탭을 닫으면 다시 찾을 수 없을 수 있습니다.
+- 서버 DB에는 원문 토큰 대신 SHA-256 해시만 있어 잃어버린 토큰을 DB에서 복구할 수 없습니다.
+
+2. 운영 담당자 토큰
+- PC PowerShell에서 node admin.js create-reviewer-to-file "테스트 담당자" 실행.
+- data/LOCAL_TOKENS.txt에 담당자 ID와 원문 토큰이 기록됩니다. 메모장으로 열어 복사하세요.
+- PC에서 서버가 표시한 주소의 /review 화면에 토큰을 붙여넣습니다. start.cmd일 때는 http://127.0.0.1:3000/review 입니다.
+- 유출 또는 분실 시 node admin.js revoke-reviewer <담당자 ID> 후 새 담당자를 발급하세요.
+- data/LOCAL_TOKENS.txt는 Git에서 제외하지만 평문 파일입니다. 공유·업로드하지 마세요.
+
+3. SQLite 조회 메모
+- 별도 SQLite 프로그램은 필요하지 않습니다. RandomChat 폴더에서 `node db-view.js`를 실행하면 DB 건수만 봅니다.
+- `node db-view.js users`, `node db-view.js rooms`는 최근 테스트 계정·방을 읽기 전용으로 표시합니다.
+- `node db-view.js posts`, `node db-view.js stories`는 최근 라운지 글과 만료 시각을 읽기 전용으로 표시합니다.
+- `node db-view.js messages <방 ID>`는 특정 방의 메시지 본문을 표시하므로 개인 테스트 내용이 보일 수 있습니다.
+- `node db-view.js sql "SELECT ..."`는 SELECT 조회문만 허용합니다. INSERT·UPDATE·DELETE·DROP은 실행되지 않습니다.
+
+4. 자주 쓰는 API (개발용)
+GET /api/admin/rooms?offset=0 : 담당자 토큰으로 전체 대화방을 50개씩 조회
+GET /api/admin/rooms/<방 ID>?offset=0 : 담당자 토큰으로 텍스트 메시지를 200개씩 조회, 열람 기록 저장
+관리자 화면: PC 서버 주소 뒤 /review → data/LOCAL_TOKENS.txt의 담당자 토큰으로 로그인 → 관리자 대화 조회
+GET /api/health : 서버 동작 확인, 토큰 불필요
+GET /app.apk : 공기계 브라우저용 디버그 APK 다운로드, 토큰 불필요
+POST /api/dev/users : 테스트 계정 생성, 성인 자기 확인만 수행
+GET /api/state : 본인 대기·대화방 목록
+POST /api/queue : 랜덤 매칭 대기/진입
+GET /api/rooms/<방 ID> : 방과 메시지 조회
+POST /api/rooms/<방 ID>/messages : 메시지 전송
+POST /api/rooms/<방 ID>/request : 계속 대화 요청
+POST /api/rooms/<방 ID>/request/decision : 수락/거절
+POST /api/rooms/<방 ID>/photos : JPEG/PNG 사진 업로드
+POST /api/rooms/<방 ID>/videos : 수락 뒤 MP4 영상 업로드
+GET /api/rooms/<방 ID>/photos 또는 /videos : 승인 상태 목록
+GET /api/photos/<사진 ID> 또는 /api/videos/<영상 ID> : 승인 파일 열람
+GET /api/feed : 로그인 사용자용 최신 게시물 40개
+POST /api/posts : 게시물 작성 (body 1~500자)
+POST/GET /api/posts/<게시물 ID>/image : 내 게시물 사진 업로드 / 로그인 사용자 사진 열람
+DELETE /api/posts/<게시물 ID> : 내 게시물 삭제
+GET /api/stories : 아직 만료되지 않은 24시간 스토리
+POST /api/stories : 스토리 작성 (body 1~120자)
+POST/GET /api/stories/<스토리 ID>/image : 내 스토리 사진 업로드 / 로그인 사용자 사진 열람
+DELETE /api/stories/<스토리 ID> : 내 스토리 삭제
+POST /api/rooms/<방 ID>/report : 신고
+POST /api/rooms/<방 ID>/block : 차단
+POST /api/rooms/<방 ID>/leave : 대화 종료
+
+사용자 API는 Authorization: Bearer <사용자 토큰> 헤더를 씁니다. Android 앱은 자동으로 붙입니다.
+검토 API는 담당자 토큰을 사용합니다. 전체 절차와 제한은 README.md를 보세요.

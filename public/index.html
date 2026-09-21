@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>모먼트 · 로컬 랜덤채팅</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="모먼트 홈"><span class="brand-mark">✳</span> 모먼트 <small>LOCAL DEMO</small></a>
+    <span class="header-note">우연히 시작하고, 서로 원하면 이어지는 대화</span>
+  </header>
+  <main>
+    <section id="welcome" class="welcome panel">
+      <div class="eyebrow">01 / 시작하기</div>
+      <h1>대화부터<br><em>시작해요.</em></h1>
+      <p class="lead">소개는 서로 계속 대화하기로 결정한 뒤 공개됩니다. PC와 같은 집 공유기 안에서 시험하는 개발용 데모입니다.</p>
+      <p class="muted">이 로컬 테스트의 텍스트 대화는 관리자가 조회할 수 있습니다.</p>
+      <form id="join-form" class="stack">
+        <label>닉네임 <input id="nickname" maxlength="24" autocomplete="off" required placeholder="예: 밤산책"></label>
+        <label>소개 <span class="optional">수락 후 공개 · 선택</span><textarea id="intro" maxlength="300" rows="3" placeholder="나를 소개하는 짧은 문장"></textarea></label>
+        <label class="check"><input id="adult" type="checkbox" required><span>만 19세 이상입니다. (개발용 자기 확인이며 실제 연령 인증은 아닙니다.)</span></label>
+        <button class="primary" type="submit">대화 시작하기 <span>↗</span></button>
+      </form>
+    </section>
+
+    <section id="dashboard" class="dashboard hidden">
+      <div class="page-intro"><div><div class="eyebrow">PERSONAL PROJECT / RANDOM CHAT</div><h1>지금, 누군가와<br><em>이야기해요.</em></h1></div><div class="identity"><span id="my-name"></span><button id="reset-user" class="text-button" type="button">다른 테스트 사용자</button></div></div>
+      <div id="flash" class="flash hidden" role="status"></div>
+      <div class="grid">
+        <div class="main-column">
+          <section class="panel social-panel">
+            <div class="social-heading"><div><div class="section-label">오늘의 라운지</div><h2>가볍게 남기는<br>오늘의 이야기.</h2></div><p>로그인한 로컬 테스트 사용자에게만 보입니다.</p></div>
+            <div id="story-list" class="story-list"><p class="muted">스토리를 불러오는 중입니다.</p></div>
+            <form id="story-form" class="social-form"><label>24시간 스토리 <textarea id="story-input" maxlength="120" rows="2" placeholder="지금의 기분이나 짧은 이야기를 남겨 보세요" required></textarea></label><div class="social-form-actions"><label class="file-label">사진 추가 <input id="story-image" type="file" accept="image/jpeg,image/png"></label><button class="primary" type="submit">스토리 올리기</button></div></form>
+          </section>
+          <section class="panel feed-panel">
+            <div class="social-heading"><div><div class="section-label">커뮤니티</div><h2>새로운 게시물</h2></div><button id="refresh-feed" class="secondary" type="button">새로고침</button></div>
+            <form id="post-form" class="social-form"><label>내 생각 <textarea id="post-input" maxlength="500" rows="4" placeholder="부담 없이 한 줄부터 적어 보세요" required></textarea></label><div class="social-form-actions"><label class="file-label">사진 추가 <input id="post-image" type="file" accept="image/jpeg,image/png"></label><button class="primary" type="submit">게시하기</button></div></form>
+            <div id="feed-list" class="feed-list"><p class="muted">게시물을 불러오는 중입니다.</p></div>
+          </section>
+          <section class="panel home-card"><div class="section-label">랜덤 대화</div><h2>프로필보다<br>대화가 먼저.</h2><p>대기 중인 사람과 1:1로 바로 연결합니다. 가짜 상대를 만들지 않습니다.</p><div class="home-actions"><button id="match-btn" class="primary" type="button">랜덤 대화 찾기 <span>↗</span></button><button id="cancel-btn" class="secondary hidden" type="button">대기 취소</button></div><div id="waiting" class="waiting hidden"><span class="pulse"></span> 상대를 기다리는 중입니다. 다른 창에서 테스트 사용자를 만들어 보세요.</div></section>
+          <section id="room-panel" class="panel room-panel hidden"><div class="room-top"><div><div id="room-phase" class="section-label"></div><h2 id="room-peer">랜덤 상대</h2><p id="room-subtitle"></p></div><span id="room-badge" class="badge"></span></div><div id="request-banner" class="request-banner hidden"></div><div id="messages" class="messages" aria-live="polite"></div><form id="message-form" class="message-form"><input id="message-input" maxlength="1000" autocomplete="off" placeholder="메시지를 입력하세요" required><button type="submit" aria-label="전송">↑</button></form><div id="media-panel" class="media-panel"><div class="media-heading"><h3>사진·영상</h3><button id="load-media" class="secondary" type="button">승인된 미디어 보기 / 새로고침</button></div><p id="media-status" class="muted">운영자 승인 후 여기에 표시됩니다.</p><div id="media-list" class="media-list"></div></div><div class="room-actions"><button id="request-btn" class="secondary" type="button">계속 대화 요청</button><button id="leave-btn" class="text-button" type="button">대화 끝내기</button><button id="block-btn" class="text-button danger" type="button">차단</button><button id="report-btn" class="text-button danger" type="button">신고</button></div></section>
+          <section class="panel history-card"><div class="section-label">대화 목록</div><h2>지난 대화</h2><div id="room-list" class="room-list empty">아직 대화가 없습니다.</div></section>
+        </div>
+        <aside class="side-column"><section class="panel quota-card"><div class="section-label">오늘의 무료 연결</div><div class="quota-number"><strong id="quota-left">2</strong><span>/ 2건 남음</span></div><div class="quota-meter"><span id="quota-bar"></span></div><p>계속 대화 요청이 <b>수락될 때만</b> 신청자의 1건이 사용됩니다.</p><small id="quota-detail"></small></section><section class="panel profile-card"><div class="section-label">내 소개</div><h2 id="profile-name"></h2><p id="profile-intro"></p><p class="muted">랜덤 대화 중에는 상대에게 보이지 않습니다.</p><button id="edit-profile" class="secondary" type="button">소개 수정</button><div><button id="delete-user" class="text-button danger" type="button">로컬 계정 삭제</button></div></section><section class="note-card"><b>개발 상태</b><p>PC 웹에서 상대의 승인된 사진·영상을 볼 수 있습니다. 사진·영상 업로드는 Android 앱에서 시험하세요. 실제 인증과 결제는 구현 전입니다.</p></section></aside>
+      </div>
+    </section>
+  </main>
+  <footer>모먼트 · PC와 집 공유기에서 시험하는 개발용 앱 · <a href="/review">신고 검토</a></footer>
+  <dialog id="profile-dialog"><form id="profile-form" method="dialog" class="stack"><h2>내 소개 수정</h2><label>닉네임 <input id="edit-nickname" maxlength="24" required></label><label>소개 <textarea id="edit-intro" maxlength="300" rows="4"></textarea></label><div class="dialog-actions"><button id="profile-cancel" class="secondary" type="button">취소</button><button class="primary" type="submit">저장</button></div></form></dialog>
+  <dialog id="report-dialog"><form id="report-form" method="dialog" class="stack"><h2>대화 신고</h2><p>최근 대화가 끝난 뒤에도 신고할 수 있습니다.</p><label>사유 <textarea id="report-reason" maxlength="500" rows="4" required placeholder="문제가 된 내용을 구체적으로 적어주세요"></textarea></label><div class="dialog-actions"><button id="report-cancel" class="secondary" type="button">취소</button><button class="primary" type="submit">신고 접수</button></div></form></dialog>
+</body>
+</html>
