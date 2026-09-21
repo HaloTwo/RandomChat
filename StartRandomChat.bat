@@ -1,72 +1,121 @@
 @echo off
-setlocal
-cd /d "%~dp0ProjectRC"
-cls
+@setlocal EnableExtensions
+@cd /d "%~dp0"
+@cls
 
-echo.
-echo ========================================
-echo           RandomChat Dev
-echo ========================================
-echo.
-echo   Folder : %CD%
-echo   Shared rules : AGENTS.md + HANDOFF.md
-echo.
-echo   [1] Codex       - main cloud work session
-echo   [2] Local Qwen  - continue when Codex is unavailable
-echo   [3] Phone server - run Android test server
-echo.
-set /p MODE=Choose 1, 2, or 3: 
+@echo.
+@echo ========================================
+@echo           RandomChat Dev
+@echo ========================================
+@echo.
+@echo   Folder : %CD%
+@echo.
+@echo   [1] Codex Cloud
+@echo   [2] Local Qwen 3.5 9B
+@echo.
 
-if "%MODE%"=="1" goto codex
-if "%MODE%"=="2" goto local
-if "%MODE%"=="3" goto server
+@set /p "MODE=Choose 1 or 2: "
 
-echo Invalid choice.
-pause
-exit /b 1
+@if "%MODE%"=="1" goto cloud
+@if "%MODE%"=="2" goto local
 
-:codex
-where codex >nul 2>nul
-if errorlevel 1 (
-    echo Codex CLI was not found in PATH.
-    echo Install and sign in to Codex CLI, then run this file again.
-    pause
-    exit /b 1
+@echo.
+@echo [ERROR] Invalid choice: %MODE%
+@echo.
+@pause
+@exit /b 1
+
+
+:cloud
+@where codex >nul 2>&1
+@if errorlevel 1 (
+    @echo.
+    @echo [ERROR] Codex CLI was not found.
+    @echo.
+    @pause
+    @exit /b 1
 )
-echo.
-echo Codex started. Type update to resume the project.
-codex
-exit /b %errorlevel%
+
+@cls
+@echo.
+@echo ========================================
+@echo           Codex Cloud
+@echo ========================================
+@echo.
+@echo   Folder : %CD%
+@echo.
+@echo   Type "update" to resume the project.
+@echo.
+
+@call codex
+
+@set "CODEX_EXIT=%ERRORLEVEL%"
+
+@echo.
+@echo ========================================
+@echo   Codex closed.
+@echo   Exit code : %CODEX_EXIT%
+@echo ========================================
+@echo.
+@pause
+@exit /b %CODEX_EXIT%
+
 
 :local
-where ollama >nul 2>nul
-if errorlevel 1 (
-    echo Ollama was not found in PATH.
-    echo Install Ollama and pull a Qwen model on this laptop first.
-    pause
-    exit /b 1
+@where codex >nul 2>&1
+@if errorlevel 1 (
+    @echo.
+    @echo [ERROR] Codex CLI was not found.
+    @echo.
+    @pause
+    @exit /b 1
 )
-where opencode >nul 2>nul
-if errorlevel 1 (
-    echo OpenCode was not found in PATH.
-    echo Install OpenCode on this laptop first.
-    pause
-    exit /b 1
-)
-set "LOCAL_MODEL="
-for /f "skip=1 tokens=1" %%M in ('ollama list ^| findstr /i "qwen3.5 qwen"') do if not defined LOCAL_MODEL set "LOCAL_MODEL=%%M"
-if not defined LOCAL_MODEL (
-    echo No Qwen model was found in Ollama.
-    echo Pull the Qwen3.5 model you want, then run this file again.
-    pause
-    exit /b 1
-)
-echo.
-echo Local Qwen started: %LOCAL_MODEL%
-echo Type update to resume the project.
-opencode --model ollama/%LOCAL_MODEL%
-exit /b %errorlevel%
 
-:server
-call start-phone.cmd
-exit /b %errorlevel%
+@where ollama >nul 2>&1
+@if errorlevel 1 (
+    @echo.
+    @echo [ERROR] Ollama was not found.
+    @echo.
+    @pause
+    @exit /b 1
+)
+
+@set "LOCAL_MODEL=qwen3.5:9b"
+
+@ollama list 2>nul | findstr /i /c:"%LOCAL_MODEL%" >nul
+@if errorlevel 1 (
+    @echo.
+    @echo [ERROR] Model not found: %LOCAL_MODEL%
+    @echo.
+    @echo Install:
+    @echo   ollama pull %LOCAL_MODEL%
+    @echo.
+    @pause
+    @exit /b 1
+)
+
+@cls
+@echo.
+@echo ========================================
+@echo        Codex Local / Ollama
+@echo ========================================
+@echo.
+@echo   Model  : %LOCAL_MODEL%
+@echo   Folder : %CD%
+@echo   Mode   : Autonomous
+@echo.
+@echo   Type "update" to resume the project.
+@echo.
+
+@call codex --oss --local-provider ollama -m "%LOCAL_MODEL%" --sandbox workspace-write --ask-for-approval never
+
+@set "CODEX_EXIT=%ERRORLEVEL%"
+
+@echo.
+@echo ========================================
+@echo   Local Codex closed.
+@echo   Exit code : %CODEX_EXIT%
+@echo ========================================
+@echo.
+@pause
+@exit /b %CODEX_EXIT%

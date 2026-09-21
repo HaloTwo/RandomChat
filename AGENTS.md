@@ -44,14 +44,67 @@ Windows 절대경로를 코드나 지침에 하드코딩하지 않는다.
 파일이나 디렉터리 경로를 임의로 추측하지 않는다.
 필요한 경우 `glob`, `read` 등 실제 파일 탐색 도구를 사용하여 존재 여부를 먼저 확인한다.
 
-## Codex와 로컬 Qwen 공통 작업 재개
+## Codex Cloud와 로컬 Qwen 공통 작업 재개
 
-`StartRandomChat.bat`는 Codex와 로컬 Qwen OpenCode를 모두 `ProjectRC/`에서 시작한다.
-두 실행기는 `ProjectRC/AGENTS.md`, `ProjectRC/HANDOFF.md`, `ProjectRC/README.md`를 같은 작업 기준으로 사용한다.
+`StartRandomChat.bat`는 두 모드 모두 `ProjectRC/`를 작업 디렉터리로 사용한다.
 
-사용자가 `update`만 입력하면 먼저 `ProjectRC/HANDOFF.md`, `ProjectRC/README.md`, `git status --short`, 최근 커밋을 확인한다. 그 다음 실패한 검증 또는 미완료 기기 확인에서 가장 작은 다음 작업을 고르고, 구현 뒤 필요한 테스트·APK 빌드·문서 갱신을 수행한다.
+- `[1] Codex Cloud`: 기본 개발 모드
+- `[2] Local Qwen`: Codex 사용량 소진 또는 인터넷이 없을 때 `qwen3.5:9b`를 사용하는 로컬 fallback 모드
 
-`update <할 일>`은 같은 절차로 지정한 일을 수행한다. 토큰, DB, 기존 사용자 데이터는 요청 없이 출력·삭제·초기화하지 않는다.
+두 모드 모두 같은 Codex CLI를 사용한다. 로컬 모드는 Ollama의 `qwen3.5:9b` 모델을 `--oss`로 사용한다.
+OpenCode를 프로젝트 실행 경로에 사용하지 않는다.
+
+Codex는 Git 저장소 루트의 `AGENTS.md`를 자동으로 읽는다.
+실제 공통 상태 파일은 다음과 같다.
+
+- 프로젝트 규칙: `AGENTS.md`
+- 작업 인수인계: `ProjectRC/HANDOFF.md`
+- 개발 진행 내역: `ProjectRC/README.md`
+
+사용자가 `update`만 입력하면 먼저 다음을 확인한다.
+
+1. `ProjectRC/HANDOFF.md`
+2. `ProjectRC/README.md`
+3. `git status --short`
+4. 최근 커밋
+5. 필요한 경우 실제 `ProjectRC/` 코드
+
+그 다음 현재 미완료 작업에서 가장 작은 다음 작업을 골라 계속 진행한다.
+구현 뒤 필요한 테스트·APK 빌드·문서 갱신을 수행한다.
+
+`update <할 일>`은 같은 절차로 지정한 일을 수행한다.
+토큰, DB, 기존 사용자 데이터는 요청 없이 출력·삭제·초기화하지 않는다.
+
+### HANDOFF 유지 규칙
+
+Cloud와 Local 사이에서 대화 기록 자체를 공유한다고 가정하지 않는다.
+연속 작업의 기준은 Git 작업 트리와 `ProjectRC/HANDOFF.md`다.
+
+코드 또는 프로젝트 상태를 의미 있게 변경한 작업을 마칠 때는 `ProjectRC/HANDOFF.md`를 최신 상태로 유지한다.
+최소한 다음 내용을 짧게 기록한다.
+
+- 방금 완료한 작업
+- 현재 미완료 작업
+- 다음에 바로 할 작업
+- 마지막 검증 결과
+- 중요한 오류 또는 막힌 점
+- 변경 중인 주요 파일
+
+기능 단위 진행 상황이 바뀌었다면 `ProjectRC/README.md`도 함께 갱신한다.
+Cloud에서 Local로, 또는 Local에서 Cloud로 전환한 뒤 `update`를 실행하면 이 상태를 기준으로 이어서 작업한다.
+
+## Windows 파일 인코딩 규칙
+
+이 프로젝트의 텍스트 파일은 UTF-8을 사용한다.
+
+PowerShell에서 한국어가 포함된 파일을 읽을 때는 반드시 UTF-8 인코딩을 명시한다.
+
+예:
+Get-Content .\AGENTS.md -Encoding UTF8
+Get-Content .\ProjectRC\HANDOFF.md -Encoding UTF8
+Get-Content .\ProjectRC\README.md -Encoding UTF8
+
+한글이 깨져 보이면 내용을 추측하지 말고 UTF-8로 다시 읽는다.
 
 
 # 최우선 응답 규칙
@@ -77,8 +130,8 @@ Windows 절대경로를 코드나 지침에 하드코딩하지 않는다.
 
 # 새 세션 시작 시 초기화
 
-새 OpenCode 세션에서 첫 사용자 요청을 받으면
-바로 답변부터 하지 말고 먼저 RandomChat 프로젝트 상태를 확인한다.
+새 Codex 세션에서 첫 사용자 요청을 받으면
+Cloud/Local 모드와 관계없이 바로 답변부터 하지 말고 먼저 RandomChat 프로젝트 상태를 확인한다.
 
 이 초기화는 세션당 한 번만 수행한다.
 같은 세션에서 매 요청마다 반복하지 않는다.
@@ -390,12 +443,17 @@ Context7를 사용할 수 없다면
 다른 문서나 캐시 파일에 복사하지 않는다.
 
 
-# AI 모델
+# AI 실행 모드
 
-현재 프로젝트는 Ollama의 로컬 모델을 기본으로 사용한다.
+AI 실행 모드는 `StartRandomChat.bat`에서 사용자가 선택한다.
 
-사용자가 명시적으로 요청하지 않는 한
-클라우드 AI 모델로 임의 전환하지 않는다.
+- `[1] Codex Cloud`가 기본 개발 모드다.
+- `[2] Local Qwen`은 Codex 사용량 소진 또는 인터넷이 없을 때 `qwen3.5:9b`를 사용하는 fallback 모드다.
+- Local 모드는 Ollama의 `qwen3.5:9b`로 고정한다.
+- 다른 Qwen 모델을 자동 탐색하거나 임의로 전환하지 않는다.
+
+에이전트가 스스로 Cloud/Local 모드를 바꾸거나 다른 모델로 전환하지 않는다.
+현재 세션을 시작한 실행 모드와 모델을 그대로 사용한다.
 
 
 # Git
@@ -430,3 +488,19 @@ Context7를 사용할 수 없다면
 
 앞으로 구현해야 할 기능과 프로젝트 기획 의도는
 최신 Notion 정보를 주요 기준으로 삼는다.
+
+## 지속 작업 규칙
+
+작업을 시작한 뒤 계획만 말하고 종료하지 않는다.
+
+"확인하겠습니다", "읽겠습니다", "진행하겠습니다" 같은 상태 설명만 출력하고 턴을 종료하지 않는다.
+
+필요한 파일을 실제로 읽고, 수정하고, 테스트한다.
+
+오류가 발생하면 스스로 원인을 분석하고 수정한 뒤 다시 테스트한다.
+
+요청한 작업의 완료 조건이 충족될 때까지 작업 사이클을 반복한다.
+
+중간 단계가 끝났다는 이유로 Done 처리하지 않는다.
+
+실제 구현 또는 검증까지 끝난 뒤에만 최종 응답을 한다.

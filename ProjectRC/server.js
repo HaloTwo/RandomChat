@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const http = require('node:http');
 const fs = require('node:fs');
@@ -657,13 +657,13 @@ function createApp(options = {}) {
         return send(res, 200, { deleted: true });
       }
       // 공개 피드와 스토리는 로그인한 로컬 테스트 사용자끼리만 본다. 랜덤 대화방 미디어와는 저장·권한을 분리한다.
-      if (pathname === '/api/feed' && req.method === 'GET') {
-        const posts = db.prepare(`SELECT p.id,p.body,p.created_at AS createdAt,p.image IS NOT NULL AS hasImage,
-          p.author_id = ? AS mine,u.nickname AS author
-          FROM posts p JOIN users u ON u.id = p.author_id AND u.deleted_at IS NULL
-          ORDER BY p.created_at DESC LIMIT 40`).all(user.id);
-        return send(res, 200, { posts: posts.map(p => ({ ...p, mine: !!p.mine, hasImage: !!p.hasImage })) });
+      if (pathname === '/api/posts' && req.method === 'GET') {
+        const posts = db.prepare(`SELECT p.id,p.body,p.created_at AS createdAt,p.image IS NOT NULL AS hasImage
+          FROM posts p
+          ORDER BY p.created_at DESC LIMIT 40`).all();
+        return send(res, 200, { posts: posts.map(p => ({ ...p, hasImage: !!p.hasImage })) });
       }
+
       if (pathname === '/api/posts' && req.method === 'POST') {
         const body = String((await readJson(req)).body || '').trim();
         if (!body || body.length > 500) throw httpError(400, '게시물은 1~500자로 입력하세요.');
@@ -982,3 +982,5 @@ if (require.main === module) {
 }
 
 module.exports = { createApp, createDatabase, createReviewer, assignReport, assignPhoto, assignProfilePhoto, assignVideo, kstDay };
+
+
