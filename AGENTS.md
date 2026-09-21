@@ -941,59 +941,23 @@ commit 대상에 들어가지 않았는지 확인한다.
 - commit hash
 - push 결과
 
-OpenCode Watchdog 작업 상태 규칙
+OpenCode Watchdog 상태 규칙
 
-이 프로젝트는 ProjectRC/.agent-watchdog.json을
-OpenCode watchdog용 작업 상태 파일로 사용한다.
+Watchdog 상태 파일은 Git 저장소 루트의 .agent-watchdog.json을 사용한다.
+ProjectRC/.agent-watchdog.json을 사용하지 않는다.
 
-이 파일은 실행 상태 전달용이며 Git에 커밋하지 않는다.
-가능하면 .gitignore에 다음을 추가한다.
-
-ProjectRC/.agent-watchdog.json
-
-장기/다단계 작업 시작
-
-사용자가 구현, 수정, 테스트, 리팩터링 등
-여러 단계가 필요한 작업을 요청하면 실제 작업을 시작하기 전에
-ProjectRC/.agent-watchdog.json을 다음 형식으로 생성 또는 갱신한다.
+장기/다단계 작업을 시작하면 다음 형태로 갱신한다.
 
 {
   "status": "running",
-  "task": "현재 작업을 한 문장으로 요약",
+  "task": "현재 작업 요약",
   "updated_at": "현재 시각 ISO 8601",
-  "next": "다음에 수행할 구체적인 한 단계"
+  "next": "다음 실제 작업"
 }
 
-status는 작업이 실제로 완료되기 전까지 반드시 running으로 유지한다.
+작업이 완전히 끝나기 전까지 status는 running으로 유지한다.
 
-의미 있는 체크포인트마다 updated_at과 next를 갱신한다.
-
-중간에 멈추지 않기
-
-status가 running인 동안에는
-단순히 사용자 입력을 기다리기 위해 작업을 종료하지 않는다.
-
-프로젝트 내부 자료로 판단 가능한 내용은 직접 판단하고 계속 진행한다.
-
-"계속", "계속 진행", "다음으로 진행" 같은 사용자 입력이 없어도
-현재 요청의 완료 조건까지 작업을 이어간다.
-
-다음 경우에만 사용자 입력을 기다릴 수 있다.
-
-데이터 손실 위험
-
-해결 불가능한 Git 충돌
-
-비밀정보/보안 위험
-
-서로 충돌하는 요구사항
-
-외부 승인이나 계정 조작이 반드시 필요한 경우
-
-작업 완료
-
-요청한 구현과 가능한 검증이 실제로 끝난 뒤,
-최종 응답 직전에 상태를 다음처럼 변경한다.
+정상 완료 직전에:
 
 {
   "status": "done",
@@ -1002,25 +966,16 @@ status가 running인 동안에는
   "next": ""
 }
 
-작업이 실패하여 사람 판단이 반드시 필요한 경우에는:
+로 변경한다.
 
-{
-  "status": "blocked",
-  "task": "현재 작업",
-  "updated_at": "현재 시각 ISO 8601",
-  "next": "사용자에게 필요한 판단 또는 조치"
-}
+사용자 판단이 반드시 필요해 중단해야 할 때만 blocked를 사용한다.
 
-done이나 blocked로 바꾸지 않은 채
-작업 턴을 임의로 종료하지 않는다.
+status=running인데 에이전트가 사용자 입력창으로 돌아가며 임의로 멈추지 않는다.
+프로젝트 내부에서 판단 가능한 내용은 스스로 계속 진행한다.
 
-Watchdog 동작
+Watchdog는 OpenCode TUI 자체를 끄거나 재시작하는 것이 목적이 아니다.
+OpenCode 창이 살아 있는 상태에서 에이전트 턴이 중간에 끝나고 실제 계산도 멈춘 경우,
+같은 마지막 세션을 opencode run --continue로 자동 재개한다.
 
-watchdog는 status=running인데 OpenCode 세션이 idle이 되면
-잠시 대기한 뒤 같은 세션에 자동으로 계속 진행 프롬프트를 보낸다.
-
-따라서 정상적으로 작업을 끝냈다면
-반드시 최종 응답 전에 status=done으로 바꾼다.
-
-긴 Thinking 자체는 실패로 간주하지 않는다.
-ACTIVE 상태이며 Ollama/OpenCode 프로세스가 실제 계산 중이면 기다린다.
+모든 OpenCode/Watchdog 명령은 RandomChat Git 저장소 루트를 작업 디렉터리로 사용한다.
+ProjectRC/를 OpenCode 실행 디렉터리로 사용하지 않는다.
