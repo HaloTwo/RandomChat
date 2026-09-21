@@ -4,9 +4,14 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.view.Gravity;
+import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
@@ -42,10 +47,10 @@ public final class MainActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private volatile String token = "";
     private volatile String roomId = "";
-    private volatile String serverAddress = "http://10.0.2.2:3000";
+    private volatile String serverAddress = "http://192.168.0.2:3000";
     private volatile boolean foreground;
     private EditText serverInput, nicknameInput, messageInput, reportInput, storyInput, postInput;
-    private TextView statusView;
+    private TextView statusView, pageTitle, pageSubtitle;
     private LinearLayout roomsView, messagesView, photosView, videosView, ownProfilePhotosView, peerProfilePhotosView, storiesView, postsView;
     private ImageView photoView;
     private VideoView videoView;
@@ -54,6 +59,8 @@ public final class MainActivity extends Activity {
     private String pendingSocialBody = "";
     private String pendingSocialId = "";
     private String pendingSocialToken = "";
+    private LinearLayout loungeSection, chatSection, profileSection;
+    private Button loungeTab, chatTab, profileTab;
 
     private interface Work { void run() throws Exception; }
 
@@ -64,67 +71,78 @@ public final class MainActivity extends Activity {
         File[] oldPreviews = getCacheDir().listFiles((dir, name) -> name.startsWith("moment-preview-") && name.endsWith(".mp4"));
         if (oldPreviews != null) for (File oldPreview : oldPreviews) oldPreview.delete();
         ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(Color.rgb(244, 247, 243));
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        int pad = dp(18);
+        int pad = dp(16);
         page.setPadding(pad, pad, pad, pad);
         scroll.addView(page);
         setContentView(scroll);
-        heading(page, "모먼트 · 로컬 Android", 26);
-        label(page, "개발용 앱 · 토큰은 실행 중 메모리에만 보관합니다.");
-        label(page, "이 로컬 테스트의 텍스트 대화는 관리자가 조회할 수 있습니다.");
-        String savedAddress = getPreferences(MODE_PRIVATE).getString(PREF_SERVER_ADDRESS, "http://10.0.2.2:3000");
-        serverAddress = savedAddress;
-        serverInput = input(page, "서버 주소", savedAddress);
-        serverInput.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence text, int start, int count, int after) { }
-            @Override public void onTextChanged(CharSequence text, int start, int before, int count) { serverAddress = text.toString().trim(); }
-            @Override public void afterTextChanged(Editable text) { }
-        });
-        button(page, "서버 연결 확인", () -> background(() -> {
-            JSONObject health = new JSONObject(new String(requestRaw("GET", "/api/health", null, null, false), StandardCharsets.UTF_8));
-            if (!health.optBoolean("ok")) throw new IllegalStateException("서버 응답을 확인하지 못했습니다.");
-            saveServerAddress();
-            notice("서버 연결 성공. 이제 테스트 계정을 만드세요.");
-        }));
-        nicknameInput = input(page, "테스트 닉네임", "Android 사용자");
-        button(page, "테스트 계정 만들기", () -> {
-            String nickname = nicknameInput.getText().toString().trim();
-            background(() -> {
-            JSONObject body = new JSONObject().put("nickname", nickname).put("adultAttested", true);
-            JSONObject user = new JSONObject(new String(requestRaw("POST", "/api/dev/users", body.toString().getBytes(StandardCharsets.UTF_8), "application/json", false), StandardCharsets.UTF_8));
-            token = user.getString("token");
-            saveServerAddress();
-            notice("계정을 만들었습니다. 매칭을 시작하세요.");
-            refresh();
-            });
-        });
-        statusView = label(page, "서버와 연결 전");
-        heading(page, "오늘의 라운지", 22);
-        label(page, "로그인한 로컬 테스트 사용자끼리만 보입니다. 스토리는 24시간 뒤 사라집니다.");
-        storyInput = input(page, "24시간 스토리 (120자)", "");
-        button(page, "스토리 올리기", () -> publishSocial("stories", false));
-        button(page, "스토리 사진 선택·올리기", () -> publishSocial("stories", true));
-        storiesView = column(page);
-        heading(page, "새로운 게시물", 22);
-        postInput = input(page, "게시물 (500자)", "");
-        button(page, "게시물 올리기", () -> publishSocial("posts", false));
-        button(page, "게시물 사진 선택·올리기", () -> publishSocial("posts", true));
-        postsView = column(page);
-        button(page, "랜덤 대화 찾기", () -> background(() -> {
+        LinearLayout hero = hero(page);
+        pageTitle = new TextView(this);
+        pageTitle.setText("모먼트");
+        pageTitle.setTextColor(Color.WHITE);
+        pageTitle.setTextSize(32);
+        pageTitle.setTypeface(null, Typeface.BOLD);
+        hero.addView(pageTitle);
+        pageSubtitle = new TextView(this);
+        pageSubtitle.setText("가벼운 이야기, 편안한 대화");
+        pageSubtitle.setTextColor(Color.rgb(215, 237, 223));
+        pageSubtitle.setTextSize(16);
+        pageSubtitle.setPadding(0, dp(4), 0, dp(14));
+        hero.addView(pageSubtitle);
+        statusView = new TextView(this);
+        statusView.setText("서버와 연결 전");
+        statusView.setTextColor(Color.rgb(23, 61, 48));
+        statusView.setTextSize(14);
+        statusView.setTypeface(null, Typeface.BOLD);
+        statusView.setPadding(dp(12), dp(8), dp(12), dp(8));
+        statusView.setBackground(round(Color.rgb(218, 241, 224), 14));
+        hero.addView(statusView);
+
+        LinearLayout navigation = new LinearLayout(this);
+        navigation.setOrientation(LinearLayout.HORIZONTAL);
+        navigation.setGravity(Gravity.CENTER);
+        navigation.setPadding(0, dp(16), 0, dp(8));
+        page.addView(navigation, new LinearLayout.LayoutParams(-1, -2));
+        loungeTab = tabButton(navigation, "라운지", () -> selectTab("lounge"));
+        chatTab = tabButton(navigation, "대화", () -> selectTab("chat"));
+        profileTab = tabButton(navigation, "내 설정", () -> selectTab("profile"));
+
+        loungeSection = section(page);
+        heading(loungeSection, "오늘의 라운지", 24);
+        label(loungeSection, "로컬 테스트 사용자끼리만 보입니다. 스토리는 24시간 뒤 사라집니다.");
+        storyInput = input(loungeSection, "24시간 스토리 (120자)", "");
+        button(loungeSection, "스토리 올리기", () -> publishSocial("stories", false));
+        button(loungeSection, "사진과 함께 올리기", () -> publishSocial("stories", true));
+        heading(loungeSection, "새로운 게시물", 22);
+        postInput = input(loungeSection, "게시물 (500자)", "");
+        button(loungeSection, "게시물 올리기", () -> publishSocial("posts", false));
+        button(loungeSection, "사진과 함께 올리기", () -> publishSocial("posts", true));
+        heading(loungeSection, "최근 스토리", 20);
+        storiesView = column(loungeSection);
+        heading(loungeSection, "최근 게시물", 20);
+        postsView = column(loungeSection);
+
+        chatSection = section(page);
+        heading(chatSection, "랜덤 대화", 24);
+        label(chatSection, "상대를 찾고, 이어서 대화할지 직접 결정하세요.");
+        button(chatSection, "랜덤 대화 찾기", () -> background(() -> {
             JSONObject result = json("POST", "/api/queue", null);
             notice(result.optBoolean("waiting") ? "상대를 기다리는 중입니다." : "매칭되었습니다.");
             refresh();
         }));
-        button(page, "새로고침", this::refresh);
-        heading(page, "대화방", 22);
-        roomsView = column(page);
-        heading(page, "현재 대화", 22);
-        messagesView = column(page);
-        heading(page, "상대 프로필 사진 · 연결 수락 후", 20);
-        peerProfilePhotosView = column(page);
-        messageInput = input(page, "보낼 메시지", "");
-        button(page, "메시지 보내기", () -> {
+        button(chatSection, "목록 새로고침", this::refresh);
+        heading(chatSection, "내 대화방", 20);
+        roomsView = column(chatSection);
+        heading(chatSection, "현재 대화", 20);
+        messagesView = column(chatSection);
+        heading(chatSection, "상대 프로필 사진", 20);
+        label(chatSection, "연결을 수락한 뒤에만 표시됩니다.");
+        peerProfilePhotosView = column(chatSection);
+        messageInput = input(chatSection, "보낼 메시지", "");
+        button(chatSection, "메시지 보내기", () -> {
             String body = messageInput.getText().toString().trim();
             background(() -> {
             String id = requireRoom();
@@ -134,13 +152,13 @@ public final class MainActivity extends Activity {
             openRoom(id);
             });
         });
-        button(page, "계속 대화 요청", () -> roomAction("POST", "request", null));
-        button(page, "요청 수락", () -> roomAction("POST", "request/decision", "accept"));
-        button(page, "요청 거절", () -> roomAction("POST", "request/decision", "reject"));
-        button(page, "대화 종료", () -> roomAction("POST", "leave", null));
-        button(page, "상대 차단", () -> roomAction("POST", "block", null));
-        reportInput = input(page, "신고 사유", "");
-        button(page, "신고", () -> {
+        button(chatSection, "계속 대화 요청", () -> roomAction("POST", "request", null));
+        button(chatSection, "요청 수락", () -> roomAction("POST", "request/decision", "accept"));
+        button(chatSection, "요청 거절", () -> roomAction("POST", "request/decision", "reject"));
+        button(chatSection, "대화 종료", () -> roomAction("POST", "leave", null));
+        button(chatSection, "상대 차단", () -> roomAction("POST", "block", null));
+        reportInput = input(chatSection, "신고 사유", "");
+        button(chatSection, "신고 접수", () -> {
             String reason = reportInput.getText().toString().trim();
             background(() -> {
             if (reason.isEmpty()) throw new IllegalArgumentException("신고 사유를 입력하세요.");
@@ -148,28 +166,60 @@ public final class MainActivity extends Activity {
             notice("신고를 접수했습니다.");
             });
         });
-        heading(page, "사진", 22);
-        label(page, "사진은 담당자 승인 후 상대에게 보입니다.");
-        button(page, "사진 선택·업로드", this::pickPhoto);
-        photosView = column(page);
-        heading(page, "영상 · 연결 수락 후", 22);
-        label(page, "20초·720p·20MB 이하 MP4를 보냅니다. 담당자 승인 후 상대에게 표시됩니다.");
-        button(page, "영상 선택·업로드", this::pickVideo);
-        videosView = column(page);
-        heading(page, "내 프로필 등록 사진", 22);
-        label(page, "채팅 첨부와 별개이며 연결 수락 뒤에만 상대에게 공개됩니다.");
-        button(page, "프로필 사진 선택·등록", this::pickProfilePhoto);
-        ownProfilePhotosView = column(page);
+        heading(chatSection, "사진", 20);
+        label(chatSection, "사진은 담당자 승인 후 상대에게 보입니다.");
+        button(chatSection, "사진 선택·업로드", this::pickPhoto);
+        photosView = column(chatSection);
+        heading(chatSection, "영상", 20);
+        label(chatSection, "20초·720p·20MB 이하 MP4만 올릴 수 있습니다.");
+        button(chatSection, "영상 선택·업로드", this::pickVideo);
+        videosView = column(chatSection);
         photoView = new ImageView(this);
         photoView.setAdjustViewBounds(true);
-        page.addView(photoView, new LinearLayout.LayoutParams(-1, dp(300)));
-        button(page, "내 사진 보기 닫기", () -> photoView.setImageDrawable(null));
+        chatSection.addView(photoView, new LinearLayout.LayoutParams(-1, dp(300)));
+        button(chatSection, "사진 보기 닫기", () -> photoView.setImageDrawable(null));
         videoView = new VideoView(this);
-        videoView.setVisibility(android.view.View.GONE);
-        page.addView(videoView, new LinearLayout.LayoutParams(-1, dp(240)));
+        videoView.setVisibility(View.GONE);
+        chatSection.addView(videoView, new LinearLayout.LayoutParams(-1, dp(240)));
         videoView.setOnCompletionListener(player -> stopVideo());
         videoView.setOnErrorListener((player, what, extra) -> { stopVideo(); notice("영상을 재생할 수 없습니다."); return true; });
-        button(page, "영상 재생 닫기", this::stopVideo);
+        button(chatSection, "영상 재생 닫기", this::stopVideo);
+
+        profileSection = section(page);
+        heading(profileSection, "내 설정", 24);
+        label(profileSection, "같은 Wi-Fi의 PC 서버 주소를 사용합니다.");
+        String savedAddress = getPreferences(MODE_PRIVATE).getString(PREF_SERVER_ADDRESS, "http://192.168.0.2:3000");
+        serverAddress = savedAddress;
+        serverInput = input(profileSection, "서버 주소", savedAddress);
+        serverInput.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence text, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence text, int start, int before, int count) { serverAddress = text.toString().trim(); }
+            @Override public void afterTextChanged(Editable text) { }
+        });
+        button(profileSection, "서버 연결 확인", () -> background(() -> {
+            JSONObject health = new JSONObject(new String(requestRaw("GET", "/api/health", null, null, false), StandardCharsets.UTF_8));
+            if (!health.optBoolean("ok")) throw new IllegalStateException("서버 응답을 확인하지 못했습니다.");
+            saveServerAddress();
+            notice("서버 연결 성공. 이제 테스트 계정을 만드세요.");
+        }));
+        nicknameInput = input(profileSection, "테스트 닉네임", "Android 사용자");
+        button(profileSection, "테스트 계정 만들기", () -> {
+            String nickname = nicknameInput.getText().toString().trim();
+            background(() -> {
+            JSONObject body = new JSONObject().put("nickname", nickname).put("adultAttested", true);
+            JSONObject user = new JSONObject(new String(requestRaw("POST", "/api/dev/users", body.toString().getBytes(StandardCharsets.UTF_8), "application/json", false), StandardCharsets.UTF_8));
+            token = user.getString("token");
+            saveServerAddress();
+            notice("계정을 만들었습니다. 매칭을 시작하세요.");
+            refresh();
+            runOnUiThread(() -> selectTab("lounge"));
+            });
+        });
+        heading(profileSection, "내 프로필 사진", 20);
+        label(profileSection, "연결 수락 뒤 상대에게만 공개됩니다.");
+        button(profileSection, "프로필 사진 선택·등록", this::pickProfilePhoto);
+        ownProfilePhotosView = column(profileSection);
+        selectTab("profile");
     }
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
@@ -179,10 +229,36 @@ public final class MainActivity extends Activity {
         parent.addView(child);
         return child;
     }
+    private GradientDrawable round(int color, int radius) {
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(color);
+        background.setCornerRadius(dp(radius));
+        return background;
+    }
+    private LinearLayout hero(LinearLayout parent) {
+        LinearLayout child = new LinearLayout(this);
+        child.setOrientation(LinearLayout.VERTICAL);
+        child.setPadding(dp(22), dp(22), dp(22), dp(22));
+        child.setBackground(round(Color.rgb(23, 61, 48), 24));
+        parent.addView(child, new LinearLayout.LayoutParams(-1, -2));
+        return child;
+    }
+    private LinearLayout section(LinearLayout parent) {
+        LinearLayout child = new LinearLayout(this);
+        child.setOrientation(LinearLayout.VERTICAL);
+        child.setPadding(dp(18), dp(10), dp(18), dp(18));
+        child.setBackground(round(Color.WHITE, 22));
+        child.setElevation(dp(2));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.topMargin = dp(8);
+        parent.addView(child, params);
+        return child;
+    }
     private TextView label(LinearLayout parent, String text) {
         TextView view = new TextView(this);
         view.setText(text);
-        view.setTextSize(16);
+        view.setTextSize(14);
+        view.setTextColor(Color.rgb(79, 101, 88));
         view.setPadding(0, dp(8), 0, dp(8));
         parent.addView(view);
         return view;
@@ -190,23 +266,65 @@ public final class MainActivity extends Activity {
     private void heading(LinearLayout parent, String text, int size) {
         TextView view = label(parent, text);
         view.setTextSize(size);
-        view.setTypeface(null, 1);
-        view.setPadding(0, dp(18), 0, dp(8));
+        view.setTextColor(Color.rgb(23, 61, 48));
+        view.setTypeface(null, Typeface.BOLD);
+        view.setPadding(0, dp(18), 0, dp(6));
     }
     private EditText input(LinearLayout parent, String hint, String value) {
         EditText view = new EditText(this);
         view.setSingleLine(true);
         view.setHint(hint);
         view.setText(value);
-        parent.addView(view);
+        view.setTextSize(16);
+        view.setTextColor(Color.rgb(29, 55, 44));
+        view.setHintTextColor(Color.rgb(125, 142, 132));
+        GradientDrawable background = round(Color.rgb(248, 250, 248), 14);
+        background.setStroke(dp(1), Color.rgb(212, 222, 215));
+        view.setBackground(background);
+        view.setPadding(dp(14), dp(4), dp(14), dp(4));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(52));
+        params.topMargin = dp(4);
+        parent.addView(view, params);
         return view;
     }
     private void button(LinearLayout parent, String title, Runnable action) {
         Button view = new Button(this);
         view.setText(title);
         view.setAllCaps(false);
-        parent.addView(view);
+        view.setTextColor(Color.WHITE);
+        view.setTextSize(15);
+        view.setTypeface(null, Typeface.BOLD);
+        view.setBackground(round(Color.rgb(31, 111, 74), 14));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(50));
+        params.topMargin = dp(8);
+        parent.addView(view, params);
         view.setOnClickListener(v -> action.run());
+    }
+    private Button tabButton(LinearLayout parent, String title, Runnable action) {
+        Button view = new Button(this);
+        view.setText(title);
+        view.setAllCaps(false);
+        view.setTextSize(15);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(46), 1f);
+        params.setMargins(dp(3), 0, dp(3), 0);
+        parent.addView(view, params);
+        view.setOnClickListener(v -> action.run());
+        return view;
+    }
+    private void selectTab(String tab) {
+        boolean lounge = "lounge".equals(tab);
+        boolean chat = "chat".equals(tab);
+        loungeSection.setVisibility(lounge ? View.VISIBLE : View.GONE);
+        chatSection.setVisibility(chat ? View.VISIBLE : View.GONE);
+        profileSection.setVisibility(!lounge && !chat ? View.VISIBLE : View.GONE);
+        styleTab(loungeTab, lounge);
+        styleTab(chatTab, chat);
+        styleTab(profileTab, !lounge && !chat);
+    }
+    private void styleTab(Button view, boolean selected) {
+        view.setTextColor(selected ? Color.WHITE : Color.rgb(23, 61, 48));
+        view.setTypeface(null, Typeface.BOLD);
+        view.setBackground(round(selected ? Color.rgb(23, 61, 48) : Color.rgb(225, 234, 227), 14));
     }
     private void notice(String text) { runOnUiThread(() -> statusView.setText(text)); }
     private void background(Work work) {

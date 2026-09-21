@@ -10,9 +10,11 @@ const db = createDatabase(path.join(__dirname, 'data', 'chat.sqlite'));
 try {
   if (command === 'create-reviewer-to-file') {
     const reviewer = createReviewer(db, args.join(' '));
-    const note = path.join(__dirname, 'data', 'LOCAL_TOKENS.txt');
+    const privateDir = path.join(__dirname, 'private');
+    fs.mkdirSync(privateDir, { recursive: true, mode: 0o700 });
+    const note = path.join(privateDir, 'LOCAL_TOKENS.txt');
     if (!fs.existsSync(note)) fs.writeFileSync(note,
-      '모먼트 로컬 테스트 토큰 메모\r\n이 파일은 data 폴더에 있어 Git에서 제외됩니다. 다른 사람에게 보내지 마세요.\r\n사용자 토큰: Android 앱이 테스트 계정 생성 시 메모리에 보관하며 API 호출에 자동 사용합니다.\r\n운영 담당자 토큰: 아래 값을 PC의 http://127.0.0.1:3000/review 에 입력합니다.\r\n\r\n', { mode: 0o600 });
+      '모먼트 로컬 테스트 토큰 메모\r\n이 파일은 private 폴더에 있으며 Git에서 제외됩니다. 다른 사람에게 보내지 마세요.\r\n사용자 토큰: Android 앱이 테스트 계정 생성 시 메모리에 보관하며 API 호출에 자동 사용합니다.\r\n운영 담당자 토큰: 아래 값을 PC의 서버 주소 뒤 /review 에 입력합니다.\r\n\r\n', { mode: 0o600 });
     fs.appendFileSync(note, `담당자: ${reviewer.id} (${args.join(' ')})\r\n토큰: ${reviewer.token}\r\n\r\n`);
     console.log(`담당자 ID: ${reviewer.id}`);
     console.log(`토큰을 ${note}에 저장했습니다. 이 파일은 PC에서만 보관하세요.`);

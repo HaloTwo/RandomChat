@@ -32,7 +32,7 @@ $apkExists = Test-Path -LiteralPath $apkPath
 $apkDetail = if ($apkExists) { "$([math]::Round((Get-Item -LiteralPath $apkPath).Length / 1KB, 1)) KB" } else { 'APK를 찾지 못했습니다.' }
 Show-Check 'APK 파일' $apkExists $apkDetail
 
-$tokenPath = Join-Path $PSScriptRoot 'data\LOCAL_TOKENS.txt'
+$tokenPath = Join-Path $PSScriptRoot 'private\LOCAL_TOKENS.txt'
 $hasTokenMemo = Test-Path -LiteralPath $tokenPath
 $tokenDetail = if ($hasTokenMemo) { '파일이 있습니다. 원문은 출력하지 않습니다.' } else { '사진·영상 검토 전 node admin.js create-reviewer-to-file "테스트 담당자"를 실행하세요.' }
 Show-Check '담당자 토큰 메모' $hasTokenMemo $tokenDetail

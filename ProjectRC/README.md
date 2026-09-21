@@ -9,17 +9,23 @@
 ### 관리자 대화 조회
 
 1. PC 서버를 켜고 브라우저에서 서버 주소 뒤에 `/review`를 붙여 엽니다. 예: `http://192.168.0.2:3000/review`. 실제 주소는 서버 창의 주소를 사용하세요.
-2. 바탕화면 `RandomChat` → `data` → `LOCAL_TOKENS.txt`를 메모장으로 열어 담당자 토큰을 복사합니다.
-3. `/review`의 토큰 입력칸에 붙여넣고 로그인합니다.
-4. **관리자 대화 조회**에서 방을 선택하면 현재 DB의 텍스트 메시지가 보입니다. 종료된 방도 조회할 수 있습니다.
-5. 방은 50개씩, 메시지는 200개씩 표시합니다. 다음 목록/메시지 버튼으로 이어서 봅니다. 새 메시지는 방을 다시 선택해 확인합니다.
-6. 사용 후 **토큰 지우기**를 누릅니다.
+2. 파일이 아직 없다면 `ProjectRC` 폴더에서 아래 명령을 먼저 실행합니다. 이 명령을 실행해야 토큰 파일이 생성됩니다.
+
+```powershell
+node admin.js create-reviewer-to-file "로컬 관리자"
+```
+
+3. 바탕화면 `RandomChat` → `ProjectRC` → `private` → `LOCAL_TOKENS.txt`를 메모장으로 열어 담당자 토큰을 복사합니다. 정확한 전체 경로는 `C:\Users\user\Desktop\RandomChat\ProjectRC\private\LOCAL_TOKENS.txt`입니다.
+4. `/review`의 토큰 입력칸에 붙여넣고 로그인합니다.
+5. **관리자 대화 조회**에서 방을 선택하면 현재 DB의 텍스트 메시지가 보입니다. 종료된 방도 조회할 수 있습니다.
+6. 방은 50개씩, 메시지는 200개씩 표시합니다. 다음 목록/메시지 버튼으로 이어서 봅니다. 새 메시지는 방을 다시 선택해 확인합니다.
+7. 사용 후 **토큰 지우기**를 누릅니다.
 
 기존 활성 담당자 토큰 모두에 대화 조회 권한이 있습니다. 일반 사용자 토큰으로는 볼 수 없습니다. 본문 열람은 `conversation_access_audit`에 기록합니다. 삭제된 메시지는 복구하지 않으며 사진·영상은 기존 배정·검토 화면을 사용합니다.
 
 ### 0. 처음 한 번만 확인
 
-- PC에 **Node.js 22 이상 LTS**가 있어야 합니다. 바탕화면 `RandomChat` 폴더에서 PowerShell을 열고 `node --version`을 입력했을 때 `v22...`가 보이면 됩니다. 이 PC에는 이미 설치되어 있습니다.
+- PC에 **Node.js 22 이상 LTS**가 있어야 합니다. 바탕화면 `RandomChat\ProjectRC` 폴더에서 PowerShell을 열고 `node --version`을 입력했을 때 `v22...`가 보이면 됩니다. 이 PC에는 이미 설치되어 있습니다.
 - SQLite, MySQL, MariaDB는 설치하지 않습니다. 서버가 `data/chat.sqlite` 파일을 자동으로 만듭니다.
 - 공기계는 Android 8 이상이어야 합니다.
 
@@ -32,7 +38,7 @@
 
 ### 2. PC에서 서버를 켭니다
 
-1. 바탕화면의 `RandomChat` 폴더를 엽니다.
+1. 바탕화면의 `RandomChat\ProjectRC` 폴더를 엽니다. 현재 실행 프로젝트의 루트는 `ProjectRC`입니다.
 2. **`start-phone.cmd`를 더블클릭**합니다.
 3. 주소 선택 화면이 나오면 공기계와 같은 공유기의 PC 주소를 선택합니다. 보통 `192.168.x.x` 주소입니다.
 4. 다음처럼 보이는 주소를 그대로 메모합니다.
@@ -46,7 +52,7 @@ PC/공기계 서버 주소: http://192.168.x.x:3000
 
 ### 3. PC 준비 상태를 확인합니다
 
-`RandomChat` 폴더 빈 곳에서 **Shift + 마우스 오른쪽 버튼 → 터미널에서 열기**를 누른 뒤 아래를 입력합니다.
+`RandomChat\ProjectRC` 폴더 빈 곳에서 **Shift + 마우스 오른쪽 버튼 → 터미널에서 열기**를 누른 뒤 아래를 입력합니다.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\check-phone-ready.ps1
@@ -57,7 +63,7 @@ powershell -ExecutionPolicy Bypass -File .\check-phone-ready.ps1
 `Windows 네트워크` 또는 `개인 네트워크 방화벽 규칙`에 `[확인 필요]`가 보이면, **집 공유기라는 것을 확인한 뒤에만** 관리자 PowerShell을 열어 아래를 한 번 실행합니다.
 
 ```powershell
-cd "$env:USERPROFILE\Desktop\RandomChat"
+cd "$env:USERPROFILE\Desktop\RandomChat\ProjectRC"
 powershell -ExecutionPolicy Bypass -File .\enable-home-phone-access.ps1
 ```
 
@@ -77,6 +83,12 @@ http://192.168.x.x:3000/install
 5. 설치가 끝나면 **모먼트** 앱을 실행합니다.
 
 공기계 브라우저에서 설치 페이지가 열리지 않으면, 먼저 같은 브라우저에서 `http://PC주소:3000/api/health`를 엽니다. `{"ok":true}`가 보일 때만 APK 설치를 진행하세요. 그래도 안 열리면 1단계와 3단계를 다시 확인합니다.
+
+`/app.apk`를 열었을 때 **"PC에서 android/build.ps1으로 먼저 빌드하세요"**가 나오면 PC의 `RandomChat\ProjectRC` 폴더에서 아래를 한 번 실행합니다. 빌드가 끝난 뒤 공기계 브라우저의 `/install` 페이지를 새로고침하고 다시 **APK 다운로드**를 누릅니다.
+
+```powershell
+.\android\build.ps1
+```
 
 ### 5. 공기계 앱을 PC 서버에 연결합니다
 
@@ -98,7 +110,7 @@ http://192.168.x.x:3000/install
 아래 명령은 설정을 바꾸지 않고 PC 주소, 서버 응답, APK 주소, 토큰 메모, 네트워크 프로필과 방화벽 규칙만 확인합니다.
 
 ```powershell
-cd "$env:USERPROFILE\Desktop\RandomChat"
+cd "$env:USERPROFILE\Desktop\RandomChat\ProjectRC"
 powershell -ExecutionPolicy Bypass -File .\check-phone-ready.ps1
 ```
 
@@ -107,7 +119,7 @@ powershell -ExecutionPolicy Bypass -File .\check-phone-ready.ps1
 **공기계에서 서버 연결이 안 되면:** PC 화면의 서버 주소가 공기계에 입력한 주소와 같은지, 두 기기가 같은 공유기에 있는지 확인하세요. 공기계 브라우저의 `/api/health`도 열리지 않으면 Windows의 해당 **이더넷/Wi-Fi 네트워크 프로필**을 확인합니다. 본인 집 공유기임을 확인한 경우에만 Windows 설정 → 네트워크 및 인터넷 → 이더넷 또는 Wi-Fi → 해당 연결 → **개인 네트워크**로 바꾸세요. 그다음 `enable-home-phone-access.ps1`을 **관리자 PowerShell**에서 한 번 실행합니다.
 
 ```powershell
-cd "$env:USERPROFILE\Desktop\RandomChat"
+cd "$env:USERPROFILE\Desktop\RandomChat\ProjectRC"
 powershell -ExecutionPolicy Bypass -File .\enable-home-phone-access.ps1
 ```
 
@@ -126,7 +138,7 @@ powershell -ExecutionPolicy Bypass -File .\enable-home-phone-access.ps1
 
 ### 사진·영상 검토 예시 (PC PowerShell)
 
-`RandomChat` 폴더에서 PowerShell을 열고, 담당자 토큰을 아직 만들지 않았다면 아래 첫 명령을 한 번 실행합니다. 토큰은 `data/LOCAL_TOKENS.txt`에 저장되며 PC 메모장으로 열 수 있습니다.
+`RandomChat\ProjectRC` 폴더에서 PowerShell을 열고, 담당자 토큰을 아직 만들지 않았다면 아래 첫 명령을 한 번 실행합니다. 그때 `private/LOCAL_TOKENS.txt`가 새로 생성되며 PC 메모장으로 열 수 있습니다.
 
 ```powershell
 node admin.js create-reviewer-to-file "테스트 담당자"
@@ -139,12 +151,12 @@ PC 브라우저에서 **3번의 PC 주소 뒤에 `/review`를 붙여** 열고 �
 ### SQLite와 토큰은 어디에 있나요?
 
 - SQLite는 **앱에 포함된 DB 방식**이라 별도 SQL 서버, 계정, 비밀번호가 필요하지 않습니다. 이 프로젝트에서는 MySQL·MariaDB·SQLite 프로그램을 추가로 받을 필요가 없습니다. 데이터 파일은 `data/chat.sqlite`이며 서버를 처음 켜면 자동으로 생성됩니다. DB 파일은 메모장으로 열거나 공유하지 마세요.
-- 토큰/API 설명은 [API_GUIDE.txt](API_GUIDE.txt)에 모았습니다. 담당자 토큰 원문은 `node admin.js create-reviewer-to-file "테스트 담당자"` 실행 후 **`data/LOCAL_TOKENS.txt`**에만 저장합니다. Android 사용자 토큰은 앱 실행 중 메모리에 있으며 API 호출 때 자동으로 붙습니다. 종료 후 복구할 수 없어 새 개발용 계정을 만들어야 합니다.
-- `data/`는 Git에서 제외됩니다. 토큰 메모와 DB 백업도 그 안에 있으니 외부에 보내지 마세요.
+- 토큰/API 설명은 [API_GUIDE.txt](API_GUIDE.txt)에 모았습니다. 담당자 토큰 파일은 처음부터 있는 파일이 아닙니다. `ProjectRC`에서 `node admin.js create-reviewer-to-file "테스트 담당자"`를 실행하면 **`C:\Users\user\Desktop\RandomChat\ProjectRC\private\LOCAL_TOKENS.txt`**가 생성됩니다. Android 사용자 토큰은 앱 실행 중 메모리에 있으며 API 호출 때 자동으로 붙습니다. 종료 후 복구할 수 없어 새 개발용 계정을 만들어야 합니다.
+- `data/`는 DB 파일, `private/`는 토큰 메모를 보관하며 둘 다 Git에서 제외됩니다. 외부에 보내지 마세요.
 
 ### SQLite를 직접 확인하는 순서
 
-1. `RandomChat` 폴더 빈 곳에서 **Shift + 마우스 오른쪽 버튼 → 터미널에서 열기**를 누릅니다.
+1. `RandomChat\ProjectRC` 폴더 빈 곳에서 **Shift + 마우스 오른쪽 버튼 → 터미널에서 열기**를 누릅니다.
 2. 아래 명령을 입력하면 DB를 바꾸지 않고 테이블별 건수만 봅니다. 이 명령에는 메시지·신고 사유·토큰 원문이 나오지 않습니다.
 
 ```powershell
@@ -220,7 +232,8 @@ node db-view.js schema
 
 `android/build/moment-local-debug.apk`를 빌드했습니다. 이 PC의 Android SDK 33과 Unity 포함 JDK 17로 `powershell -File android/build.ps1`을 실행해 다시 만들 수 있습니다. APK에는 로컬 서버 연결용 평문 HTTP만 허용됩니다.
 
-- 에뮬레이터: 서버를 켠 뒤 앱의 기본 주소 `http://10.0.2.2:3000`을 사용합니다.
+- 공기계: 앱 기본 주소 `http://192.168.0.2:3000`을 그대로 사용합니다. PC와 공기계가 같은 Wi-Fi여야 합니다.
+- 에뮬레이터: 서버 주소를 `http://10.0.2.2:3000`으로 직접 바꿉니다.
 - USB 기기: `adb reverse tcp:3000 tcp:3000` 후 앱 주소를 `http://127.0.0.1:3000`으로 바꿉니다. `adb install -r android/build/moment-local-debug.apk`로 설치합니다.
 - 공기계 Wi-Fi: 위 **처음 실행** 순서대로 `start-phone.cmd`를 켜고 앱에 표시된 PC의 사설 IPv4 주소를 입력합니다. USB 디버깅이나 ADB 설치는 필요 없습니다.
 - 두 사용자를 별도로 만들고 매칭 → 메시지 → 사진 업로드 → `node admin.js list-photos`와 `assign-photo` → `/review` 승인 → 앱 새로고침에서 승인 사진 보기를 확인합니다.
@@ -237,7 +250,7 @@ node db-view.js schema
 
 ## 로컬 신고 처리
 
-`node admin.js create-reviewer-to-file <이름>`으로 담당자 토큰을 발급·로컬 메모에 저장하고, `node admin.js list-reports`에서 신고 ID를 찾은 뒤 `node admin.js assign <신고 ID> <담당자 ID>`로 배정합니다. 담당자는 PC의 서버 주소 뒤 `/review`에서 메모의 토큰을 입력해 배정된 사건을 검토하고 처리 기록을 남깁니다. 목록에는 신고 사유가 나오지 않으며 상세 열람과 종결은 `admin_access_audit`에 남습니다. `node admin.js revoke-reviewer <담당자 ID>`로 토큰을 폐기합니다. 토큰은 `data/LOCAL_TOKENS.txt`에만 두고 노션·공유 저장소에 적지 않습니다.
+`node admin.js create-reviewer-to-file <이름>`으로 담당자 토큰을 발급·로컬 메모에 저장하고, `node admin.js list-reports`에서 신고 ID를 찾은 뒤 `node admin.js assign <신고 ID> <담당자 ID>`로 배정합니다. 담당자는 PC의 서버 주소 뒤 `/review`에서 메모의 토큰을 입력해 배정된 사건을 검토하고 처리 기록을 남깁니다. 목록에는 신고 사유가 나오지 않으며 상세 열람과 종결은 `admin_access_audit`에 남습니다. `node admin.js revoke-reviewer <담당자 ID>`로 토큰을 폐기합니다. 토큰은 `private/LOCAL_TOKENS.txt`에만 두고 노션·공유 저장소에 적지 않습니다.
 
 ## 프로필 사진
 
