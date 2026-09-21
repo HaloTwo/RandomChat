@@ -7,7 +7,7 @@
 - 서버 자동 테스트는 21개 통과했고 APK 빌드·서명과 `/app.apk` 응답을 확인했다.
 - SQLite는 `data/`, 담당자 토큰은 Git 제외 `private/LOCAL_TOKENS.txt`로 분리했다. 토큰 원문을 문서·Git·Notion에 적지 않는다.
 - 다음 실제 기기 확인: Android 0.2에서 라운지 글·랜덤 매칭·사진·영상 흐름을 각각 한 번씩 시험한다.
-- OpenCode에서는 `/update <할 일>`을 사용한다. 프로젝트의 `AGENTS.md`와 `.opencode/commands/update.md`가 검사·구현·테스트·문서 갱신 순서를 제공한다.
+- Codex CLI에서는 `update` 또는 `update <할 일>`을 입력한다. 프로젝트의 `AGENTS.md`가 검사·구현·테스트·문서 갱신 순서를 제공한다.
 
 ## 2026-09-21 공기계 시험 준비
 

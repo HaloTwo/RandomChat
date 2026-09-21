@@ -1,56 +1,72 @@
 @echo off
-cd /d "%~dp0"
+setlocal
+cd /d "%~dp0ProjectRC"
 cls
 
-set "MODEL=qwen3-coder:30b"
-set "AGENT=randomchat"
-
 echo.
 echo ========================================
-echo            RandomChat Dev
+echo           RandomChat Dev
 echo ========================================
 echo.
-echo   Agent : %AGENT%
-echo   Model : %MODEL%
+echo   Folder : %CD%
+echo   Shared rules : AGENTS.md + HANDOFF.md
 echo.
-
-echo   Checking project...
-
-if exist ".opencode\agents\randomchat.md" (
-    echo   Agent : Ready
-) else (
-    echo   Agent : Not found
-)
-
-if exist "AGENTS.md" (
-    echo   Rules : Ready
-) else (
-    echo   Rules : Not found
-)
-
-if exist "knowledge" (
-    echo   Cache : Ready
-) else (
-    echo   Cache : Not found
-)
-
+echo   [1] Codex       - main cloud work session
+echo   [2] Local Qwen  - continue when Codex is unavailable
+echo   [3] Phone server - run Android test server
 echo.
-echo   Syncing Git...
+set /p MODE=Choose 1, 2, or 3: 
 
-git pull --ff-only >nul 2>&1
+if "%MODE%"=="1" goto codex
+if "%MODE%"=="2" goto local
+if "%MODE%"=="3" goto server
 
+echo Invalid choice.
+pause
+exit /b 1
+
+:codex
+where codex >nul 2>nul
 if errorlevel 1 (
-    echo   Git   : Local mode
-) else (
-    echo   Git   : Updated
+    echo Codex CLI was not found in PATH.
+    echo Install and sign in to Codex CLI, then run this file again.
+    pause
+    exit /b 1
 )
-
 echo.
-echo ----------------------------------------
-echo   Starting OpenCode in 2 seconds...
-echo ----------------------------------------
+echo Codex started. Type update to resume the project.
+codex
+exit /b %errorlevel%
+
+:local
+where ollama >nul 2>nul
+if errorlevel 1 (
+    echo Ollama was not found in PATH.
+    echo Install Ollama and pull a Qwen model on this laptop first.
+    pause
+    exit /b 1
+)
+where opencode >nul 2>nul
+if errorlevel 1 (
+    echo OpenCode was not found in PATH.
+    echo Install OpenCode on this laptop first.
+    pause
+    exit /b 1
+)
+set "LOCAL_MODEL="
+for /f "skip=1 tokens=1" %%M in ('ollama list ^| findstr /i "qwen3.5 qwen"') do if not defined LOCAL_MODEL set "LOCAL_MODEL=%%M"
+if not defined LOCAL_MODEL (
+    echo No Qwen model was found in Ollama.
+    echo Pull the Qwen3.5 model you want, then run this file again.
+    pause
+    exit /b 1
+)
 echo.
+echo Local Qwen started: %LOCAL_MODEL%
+echo Type update to resume the project.
+opencode --model ollama/%LOCAL_MODEL%
+exit /b %errorlevel%
 
-timeout /t 2 /nobreak >nul
-
-ollama launch opencode --model %MODEL%
+:server
+call start-phone.cmd
+exit /b %errorlevel%

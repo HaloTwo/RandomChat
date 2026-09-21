@@ -44,6 +44,15 @@ Windows 절대경로를 코드나 지침에 하드코딩하지 않는다.
 파일이나 디렉터리 경로를 임의로 추측하지 않는다.
 필요한 경우 `glob`, `read` 등 실제 파일 탐색 도구를 사용하여 존재 여부를 먼저 확인한다.
 
+## Codex와 로컬 Qwen 공통 작업 재개
+
+`StartRandomChat.bat`는 Codex와 로컬 Qwen OpenCode를 모두 `ProjectRC/`에서 시작한다.
+두 실행기는 `ProjectRC/AGENTS.md`, `ProjectRC/HANDOFF.md`, `ProjectRC/README.md`를 같은 작업 기준으로 사용한다.
+
+사용자가 `update`만 입력하면 먼저 `ProjectRC/HANDOFF.md`, `ProjectRC/README.md`, `git status --short`, 최근 커밋을 확인한다. 그 다음 실패한 검증 또는 미완료 기기 확인에서 가장 작은 다음 작업을 고르고, 구현 뒤 필요한 테스트·APK 빌드·문서 갱신을 수행한다.
+
+`update <할 일>`은 같은 절차로 지정한 일을 수행한다. 토큰, DB, 기존 사용자 데이터는 요청 없이 출력·삭제·초기화하지 않는다.
+
 
 # 최우선 응답 규칙
 
