@@ -1,4 +1,28 @@
 ﻿{
   "$schema": "https://opencode.ai/config.json",
-  "default_agent": "build"
+
+  "default_agent": "build",
+
+  "permissions": [
+    // Qwen이 find_files 같은 가짜 Skill을 호출하는 것 방지
+    {
+      "action": "skill",
+      "resource": "*",
+      "effect": "deny"
+    },
+
+    // Notion MCP 도구를 일단 전부 차단
+    {
+      "action": "notion_*",
+      "resource": "*",
+      "effect": "deny"
+    },
+
+    // RandomChat에서 필요한 페이지 fetch만 허용
+    {
+      "action": "notion_notion-fetch",
+      "resource": "*",
+      "effect": "allow"
+    }
+  ]
 }
