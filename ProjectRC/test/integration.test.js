@@ -100,6 +100,9 @@ test('게시물 조회·댓글 수와 대화 읽음·입력 상태를 전달한�
   const feed = (await call('/api/feed', 'GET', null, a.token)).data.posts[0];
   assert.equal(feed.viewCount, 1);
   assert.equal(feed.commentCount, 1);
+  const activity = (await call('/api/me/activity', 'GET', null, b.token)).data;
+  assert.equal(activity.comments[0].postId, post.id);
+  assert.equal(activity.posts.length, 0);
   await call('/api/queue', 'POST', null, a.token);
   const roomId = (await call('/api/queue', 'POST', null, b.token)).data.roomId;
   await call(`/api/rooms/${roomId}/typing`, 'POST', { typing: true }, a.token);

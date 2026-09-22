@@ -18,6 +18,7 @@ let feed = [];
 let stories = [];
 let online = { count: 0, users: [] };
 let inbox = [];
+let activity = { posts: [], comments: [] };
 let ownProfilePhotos = [];
 let activePostId = null;
 let activeStory = null;
@@ -103,11 +104,17 @@ async function socialImage(path, alt) {
 
 async function refreshSocial() {
   if (!token) return;
-  const [feedResult, storyResult, inboxResult, profileResult] = await Promise.all([api('/api/feed'), api('/api/stories'), api('/api/inbox'), api('/api/profile/photos')]);
+  const [feedResult, storyResult, inboxResult, profileResult, activityResult] = await Promise.all([api('/api/feed'), api('/api/stories'), api('/api/inbox'), api('/api/profile/photos'), api('/api/me/activity')]);
   feed = feedResult.posts;
   stories = storyResult.stories;
   inbox = inboxResult.notes;
   ownProfilePhotos = profileResult.photos;
+  activity = activityResult;
+}
+
+function remainingStoryTime(expiresAt) {
+  const minutes = Math.max(0, Math.ceil((expiresAt - Date.now()) / 60000));
+  return minutes >= 60 ? `${Math.ceil(minutes / 60)}시간 남음` : `${minutes}분 남음`;
 }
 
 async function refresh() {
@@ -147,13 +154,14 @@ function render() {
   $('quota-detail').textContent = `사용 ${state.quota.used}건 · 요청 대기 ${state.quota.reserved}건 · 기준일 ${state.quota.day} (KST)`;
   const active = state.rooms.some(r => r.status === 'random');
   $('match-btn').disabled = state.waiting || active;
-  $('match-btn').textContent = active ? '진행 중인 대화가 있습니다' : '랜덤 대화 찾기 ↗';
+  $('match-btn').innerHTML = active ? '진행 중' : '⌁<span>랜덤 찾기</span>';
   $('cancel-btn').classList.toggle('hidden', !state.waiting);
   $('waiting').classList.toggle('hidden', !state.waiting);
   renderRoomList();
   renderRoom();
   renderSocial();
   renderInbox();
+  renderActivity();
 }
 
 function renderSocial() {
@@ -166,9 +174,9 @@ function renderSocial() {
   if (!stories.length) storyList.append(Object.assign(document.createElement('p'), { className: 'muted', textContent: '아직 올라온 스토리가 없습니다. 첫 이야기를 남겨 보세요.' }));
   for (const item of stories) {
     const card = document.createElement('article'); card.className = 'story-card';
-    const name = document.createElement('b'); name.className = `gender-${item.gender || 'unknown'}`; name.textContent = item.mine ? '내 스토리' : '스토리';
+    const name = document.createElement('b'); name.className = `gender-${item.gender || 'unknown'}`; name.textContent = '●';
     const body = document.createElement('p'); body.textContent = item.body;
-    const time = document.createElement('small'); time.textContent = `${formatTime(item.createdAt)} · 24시간 후 사라짐`;
+    const time = document.createElement('small'); time.textContent = remainingStoryTime(item.expiresAt);
     card.append(name, body);
     card.addEventListener('click', () => openStory(item));
     socialImage(`/api/stories/${item.id}/image`, '익명 스토리 사진').then(image => { if (image && card.isConnected) card.insertBefore(image, time); }).catch(error => flash(error.message));
@@ -209,9 +217,27 @@ function renderInbox() {
   }
 }
 
+function renderActivity() {
+  const postList = $('my-posts-list'), commentList = $('my-comments-list');
+  postList.replaceChildren(); commentList.replaceChildren();
+  if (!activity.posts.length) postList.textContent = '작성한 게시물이 없습니다.';
+  for (const post of activity.posts) {
+    const row = document.createElement('button'); row.className = 'activity-item'; row.type = 'button';
+    row.textContent = `${post.title || post.body.split('\n')[0]} · ◉ ${post.viewCount} · ◌ ${post.commentCount}`;
+    row.addEventListener('click', () => openPostDialog(post)); postList.append(row);
+  }
+  if (!activity.comments.length) commentList.textContent = '작성한 댓글이 없습니다.';
+  for (const comment of activity.comments) {
+    const row = document.createElement('button'); row.className = 'activity-item'; row.type = 'button';
+    row.textContent = `${comment.postTitle || comment.postBody.split('\n')[0]} · ${comment.body}`;
+    row.addEventListener('click', () => openPostDialog({ id: comment.postId, title: comment.postTitle, body: comment.postBody, hasImage: false })); commentList.append(row);
+  }
+}
+
 async function openPostDialog(post) {
   activePostId = post.id;
   $('post-dialog-title').textContent = post.title || '게시물';
+  $('post-dialog-stats').textContent = `◉ ${post.viewCount || 0}   ◌ ${post.commentCount || 0}   · ${formatTime(post.createdAt || Date.now())}`;
   $('post-dialog-body').textContent = post.body;
   $('post-dialog-image').classList.toggle('hidden', !post.hasImage);
   if (post.hasImage) {
@@ -240,8 +266,8 @@ async function openPostDialog(post) {
 async function openStory(item) {
   clearTimeout(storyTimer);
   activeStory = item;
-  $('story-dialog-author').textContent = item.anonymousLabel || '익명 사용자';
   $('story-dialog-body').textContent = item.body;
+  $('story-dialog-meta').textContent = `◉ ${item.viewCount || 0} · ${remainingStoryTime(item.expiresAt)}`;
   $('story-actions').classList.add('hidden');
   $('story-dialog').showModal();
   storyStartedAt = Date.now();
@@ -540,6 +566,10 @@ $('profile-visitors-btn').addEventListener('click', async () => {
 });
 $('notes-close').addEventListener('click', () => $('notes-dialog').close());
 $('visitors-close').addEventListener('click', () => $('visitors-dialog').close());
+$('settings-open').addEventListener('click', () => {
+  document.querySelectorAll('.app-tab').forEach(tab => tab.classList.toggle('hidden', tab.id !== 'tab-settings'));
+  document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('selected'));
+});
 $('theme-toggle').addEventListener('click', () => {
   document.body.classList.toggle('dark');
   const dark = document.body.classList.contains('dark');
@@ -552,8 +582,6 @@ document.querySelectorAll('.nav-item').forEach(button => button.addEventListener
   const selected = button.dataset.tab;
   document.querySelectorAll('.app-tab').forEach(tab => tab.classList.toggle('hidden', tab.id !== `tab-${selected}`));
   document.querySelectorAll('.nav-item').forEach(item => item.classList.toggle('selected', item === button));
-  $('post-fab').classList.toggle('hidden', selected !== 'posts');
-  $('match-btn').classList.toggle('hidden', selected !== 'chats');
 }));
 
 render();

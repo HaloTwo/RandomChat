@@ -835,6 +835,7 @@ function createApp(options = {}) {
       if (pathname === '/api/stories' && req.method === 'GET') {
         db.prepare('DELETE FROM stories WHERE expires_at <= ?').run(now);
         const stories = db.prepare(`SELECT s.id,s.body,s.anonymous_label AS anonymousLabel,u.gender,s.created_at AS createdAt,s.expires_at AS expiresAt,s.image IS NOT NULL AS hasImage,
+          (SELECT count(*) FROM story_views v WHERE v.story_id = s.id) AS viewCount,
           s.author_id = ? AS mine
           FROM stories s JOIN users u ON u.id = s.author_id AND u.deleted_at IS NULL
           WHERE s.expires_at > ? AND s.image IS NOT NULL ORDER BY s.created_at DESC LIMIT 30`).all(user.id, now);
@@ -929,6 +930,15 @@ function createApp(options = {}) {
           FROM profile_visits v JOIN users u ON u.id = v.visitor_id AND u.deleted_at IS NULL
           WHERE v.owner_id = ? ORDER BY v.visited_at DESC LIMIT 100`).all(user.id);
         return send(res, 200, { visitors });
+      }
+      if (pathname === '/api/me/activity' && req.method === 'GET') {
+        const posts = db.prepare(`SELECT p.id,p.title,p.body,p.created_at AS createdAt,p.image IS NOT NULL AS hasImage,
+          (SELECT count(*) FROM post_comments c WHERE c.post_id = p.id) AS commentCount,
+          (SELECT count(*) FROM post_views v WHERE v.post_id = p.id) AS viewCount
+          FROM posts p WHERE p.author_id = ? ORDER BY p.created_at DESC LIMIT 100`).all(user.id);
+        const comments = db.prepare(`SELECT c.id,c.body,c.created_at AS createdAt,p.id AS postId,p.title AS postTitle,p.body AS postBody
+          FROM post_comments c JOIN posts p ON p.id = c.post_id WHERE c.author_id = ? ORDER BY c.created_at DESC LIMIT 100`).all(user.id);
+        return send(res, 200, { posts: posts.map(post => ({ ...post, hasImage: !!post.hasImage })), comments });
       }
       if (pathname === '/api/state' && req.method === 'GET') {
         expireRequests(db, now);
