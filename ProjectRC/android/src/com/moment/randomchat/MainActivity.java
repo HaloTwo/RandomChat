@@ -64,6 +64,7 @@ public final class MainActivity extends Activity {
     private String pendingSocialToken = "";
     private LinearLayout loungeSection, chatSection, profileSection;
     private Button loungeTab, chatTab, profileTab;
+    private volatile long lastTypingAt;
 
     private interface Work { void run() throws Exception; }
 
@@ -149,12 +150,22 @@ public final class MainActivity extends Activity {
         label(chatSection, "연결을 수락한 뒤에만 표시됩니다.");
         peerProfilePhotosView = column(chatSection);
         messageInput = input(chatSection, "보낼 메시지", "");
+        messageInput.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence text, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence text, int start, int before, int count) {
+                if (roomId.isEmpty() || text.toString().trim().isEmpty() || System.currentTimeMillis() - lastTypingAt < 1500) return;
+                lastTypingAt = System.currentTimeMillis();
+                background(() -> json("POST", "/api/rooms/" + roomId + "/typing", new JSONObject().put("typing", true)));
+            }
+            @Override public void afterTextChanged(Editable text) { }
+        });
         button(chatSection, "메시지 보내기", () -> {
             String body = messageInput.getText().toString().trim();
             background(() -> {
             String id = requireRoom();
             if (body.isEmpty()) throw new IllegalArgumentException("메시지를 입력하세요.");
             json("POST", "/api/rooms/" + id + "/messages", new JSONObject().put("body", body).put("clientId", UUID.randomUUID().toString()));
+            json("POST", "/api/rooms/" + id + "/typing", new JSONObject().put("typing", false));
             runOnUiThread(() -> messageInput.setText(""));
             openRoom(id);
             });
@@ -462,7 +473,7 @@ public final class MainActivity extends Activity {
                     JSONObject story = stories.optJSONObject(i);
                     if (story == null) continue;
                     String id = story.optString("id");
-                    label(storiesView, story.optString("anonymousLabel", "익명 사용자") + " · " + story.optString("body"));
+                    label(storiesView, "스토리 · " + story.optString("body"));
                     if (story.optBoolean("hasImage")) button(storiesView, "스토리 사진 보기", () -> showPublicImage("/api/stories/" + id + "/image"));
                     if (story.optBoolean("mine")) button(storiesView, "내 스토리 삭제", () -> background(() -> { json("DELETE", "/api/stories/" + id, null); refresh(); }));
                 }
@@ -472,7 +483,10 @@ public final class MainActivity extends Activity {
                     JSONObject post = posts.optJSONObject(i);
                     if (post == null) continue;
                     String id = post.optString("id");
-                    label(postsView, post.optString("anonymousLabel", "익명 사용자") + " · " + post.optString("body"));
+                    String title = post.optString("title").trim();
+                    String body = post.optString("body");
+                    String line = (title.isEmpty() || title.equals(body) ? body : title + "\n" + body) + "\n◉ " + post.optInt("viewCount") + "   ◌ " + post.optInt("commentCount");
+                    label(postsView, line);
                     if (post.optBoolean("hasImage")) button(postsView, "게시물 사진 보기", () -> showPublicImage("/api/posts/" + id + "/image"));
                     if (post.optBoolean("mine")) button(postsView, "내 게시물 삭제", () -> background(() -> { json("DELETE", "/api/posts/" + id, null); refresh(); }));
                 }
@@ -519,8 +533,9 @@ public final class MainActivity extends Activity {
                 JSONArray messages = room.optJSONArray("messages");
                 if (messages != null) for (int i = 0; i < messages.length(); i++) {
                     JSONObject message = messages.optJSONObject(i);
-                    if (message != null) label(messagesView, (message.optBoolean("mine") ? "나: " : "상대: ") + message.optString("body"));
+                    if (message != null) label(messagesView, (message.optBoolean("mine") ? "나: " : "상대: ") + message.optString("body") + (message.optBoolean("mine") ? (message.optBoolean("read") ? "  ✓✓" : "  ✓") : ""));
                 }
+                if (room.optBoolean("peerTyping")) label(messagesView, "상대가 입력 중입니다…");
                 peerProfilePhotosView.removeAllViews();
                 if (peerProfilePhotos.length() == 0) label(peerProfilePhotosView, "공개된 프로필 사진 없음");
                 for (int i = 0; i < peerProfilePhotos.length(); i++) {

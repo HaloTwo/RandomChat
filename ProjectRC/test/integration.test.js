@@ -92,6 +92,24 @@ test('스토리는 사진이 있어야 공개되고 상세 열람만 조회 기�
   assert.equal(viewed.data.viewerDetailsAvailable, false);
 }));
 
+test('게시물 조회·댓글 수와 대화 읽음·입력 상태를 전달한다', async () => withApp(async ({ call, user }) => {
+  const a = await user('작성자'), b = await user('독자');
+  const post = (await call('/api/posts', 'POST', { title: '제목', body: '본문' }, a.token)).data;
+  assert.equal((await call(`/api/posts/${post.id}/view`, 'POST', null, b.token)).data.viewCount, 1);
+  await call(`/api/posts/${post.id}/comments`, 'POST', { body: '댓글' }, b.token);
+  const feed = (await call('/api/feed', 'GET', null, a.token)).data.posts[0];
+  assert.equal(feed.viewCount, 1);
+  assert.equal(feed.commentCount, 1);
+  await call('/api/queue', 'POST', null, a.token);
+  const roomId = (await call('/api/queue', 'POST', null, b.token)).data.roomId;
+  await call(`/api/rooms/${roomId}/typing`, 'POST', { typing: true }, a.token);
+  assert.equal((await call(`/api/rooms/${roomId}`, 'GET', null, b.token)).data.peerTyping, true);
+  await call(`/api/rooms/${roomId}/messages`, 'POST', { body: '읽음 확인', clientId: crypto.randomUUID() }, a.token);
+  await call(`/api/rooms/${roomId}`, 'GET', null, b.token);
+  const room = (await call(`/api/rooms/${roomId}`, 'GET', null, a.token)).data;
+  assert.equal(room.messages[0].read, true);
+}));
+
 test('관리자 대화 조회는 토큰 권한·페이지·열람 기록을 검증한다', async () => withApp(async ({ app, call, user }) => {
   const a = await user('A'), b = await user('B');
   await call('/api/queue', 'POST', null, a.token);

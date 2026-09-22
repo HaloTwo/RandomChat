@@ -25,6 +25,9 @@ let socialUrls = [];
 let socialSignature = '';
 let socialGeneration = 0;
 let refreshing = false;
+let storyTimer = null;
+let storyStartedAt = 0;
+let lastTypingAt = 0;
 const pendingPosts = {};
 
 // LAN HTTP에서도 사용 가능한 난수로 UUID v4를 만든다.
@@ -163,7 +166,7 @@ function renderSocial() {
   if (!stories.length) storyList.append(Object.assign(document.createElement('p'), { className: 'muted', textContent: '아직 올라온 스토리가 없습니다. 첫 이야기를 남겨 보세요.' }));
   for (const item of stories) {
     const card = document.createElement('article'); card.className = 'story-card';
-    const name = document.createElement('b'); name.className = `gender-${item.gender || 'unknown'}`; name.textContent = item.anonymousLabel || '익명 사용자';
+    const name = document.createElement('b'); name.className = `gender-${item.gender || 'unknown'}`; name.textContent = item.mine ? '내 스토리' : '스토리';
     const body = document.createElement('p'); body.textContent = item.body;
     const time = document.createElement('small'); time.textContent = `${formatTime(item.createdAt)} · 24시간 후 사라짐`;
     card.append(name, body);
@@ -178,14 +181,15 @@ function renderSocial() {
   for (const item of feed) {
     const card = document.createElement('article'); card.className = 'post-card';
     const meta = document.createElement('div'); meta.className = 'post-meta';
-    const name = document.createElement('b'); name.className = `gender-${item.gender || 'unknown'}`; name.textContent = item.anonymousLabel || '익명 사용자';
-    const time = document.createElement('small'); time.textContent = formatTime(item.createdAt); meta.append(name, time);
-    const title = document.createElement('h3'); title.textContent = item.title || '익명 이야기';
+    const time = document.createElement('small'); time.textContent = formatTime(item.createdAt); meta.append(time);
+    const title = document.createElement('h3'); title.textContent = item.title || item.body.split('\n')[0];
     const body = document.createElement('p'); body.className = 'post-preview'; body.textContent = item.body;
+    if (item.title && item.title.trim() === item.body.trim()) body.classList.add('hidden');
     const more = document.createElement('button');
     more.type = 'button'; more.className = 'more-button'; more.textContent = '⋯'; more.setAttribute('aria-label', '게시물 메뉴');
     more.addEventListener('click', () => openPostDialog(item));
     meta.append(more); card.append(meta, title, body);
+    const stats = document.createElement('div'); stats.className = 'post-stats'; stats.textContent = `◉ ${item.viewCount || 0}   ◌ ${item.commentCount || 0}`; card.append(stats);
     card.addEventListener('click', event => { if (!event.target.closest('button')) openPostDialog(item); });
     if (item.hasImage) socialImage(`/api/posts/${item.id}/image`, '익명 게시물 사진').then(image => { if (image && card.isConnected) card.append(image); }).catch(error => flash(error.message));
     if (item.mine) { const remove = document.createElement('button'); remove.className = 'text-button danger'; remove.textContent = '내 게시물 삭제'; remove.addEventListener('click', () => act(`/api/posts/${item.id}`, 'DELETE')); card.append(remove); }
@@ -207,7 +211,7 @@ function renderInbox() {
 
 async function openPostDialog(post) {
   activePostId = post.id;
-  $('post-dialog-title').textContent = post.title || '익명 이야기';
+  $('post-dialog-title').textContent = post.title || '게시물';
   $('post-dialog-body').textContent = post.body;
   $('post-dialog-image').classList.toggle('hidden', !post.hasImage);
   if (post.hasImage) {
@@ -219,6 +223,7 @@ async function openPostDialog(post) {
   $('post-action-body').value = '';
   $('post-comments').textContent = '댓글을 불러오는 중입니다.';
   $('post-dialog').showModal();
+  api(`/api/posts/${post.id}/view`, 'POST').then(result => { post.viewCount = result.viewCount; renderSocial(); }).catch(() => {});
   try {
     const result = await api(`/api/posts/${post.id}/comments`);
     const list = $('post-comments'); list.replaceChildren();
@@ -226,18 +231,27 @@ async function openPostDialog(post) {
     for (const comment of result.comments) {
       const row = document.createElement('p');
       row.className = `gender-${comment.gender || 'unknown'}`;
-      row.textContent = `${comment.anonymousLabel || '익명 사용자'} · ${comment.body}`;
+      row.textContent = `댓글 · ${comment.body}`;
       list.append(row);
     }
   } catch (error) { $('post-comments').textContent = error.message; }
 }
 
 async function openStory(item) {
+  clearTimeout(storyTimer);
   activeStory = item;
   $('story-dialog-author').textContent = item.anonymousLabel || '익명 사용자';
   $('story-dialog-body').textContent = item.body;
   $('story-actions').classList.add('hidden');
   $('story-dialog').showModal();
+  storyStartedAt = Date.now();
+  $('story-progress').style.transform = 'scaleX(0)';
+  requestAnimationFrame(() => { $('story-progress').style.transform = 'scaleX(1)'; });
+  storyTimer = setTimeout(() => {
+    const index = stories.findIndex(story => story.id === item.id);
+    if (index >= 0 && stories[index + 1]) openStory(stories[index + 1]);
+    else $('story-dialog').close();
+  }, 5000);
   // 목록 썸네일 조회와 실제 스토리 열람을 구분해 유료 조회 기능용 기록만 남긴다.
   api(`/api/stories/${item.id}/view`, 'POST').catch(() => {});
   try {
@@ -277,6 +291,7 @@ function renderRoom() {
   $('room-peer').textContent = room.peer.displayName;
   $('room-subtitle').textContent = connected ? (room.peer.intro || '상대가 소개를 작성하지 않았습니다.') : ended ? '이 대화는 종료되었습니다. 최근 대화 신고는 가능합니다.' : '서로 수락하기 전까지 소개는 비공개입니다.';
   $('room-badge').textContent = connected ? '연결됨' : ended ? '종료' : '익명 대화';
+  $('typing-indicator').classList.toggle('hidden', !room.peerTyping || ended);
   $('message-form').classList.toggle('hidden', ended);
   $('leave-btn').classList.toggle('hidden', ended);
   $('block-btn').classList.toggle('hidden', ended);
@@ -304,7 +319,7 @@ function renderRoom() {
   for (const item of room.messages) {
     const bubble = document.createElement('div'); bubble.className = `message${item.mine ? ' mine' : ''}`;
     bubble.append(document.createTextNode(item.body));
-    const small = document.createElement('small'); small.textContent = formatTime(item.createdAt); bubble.append(small);
+    const small = document.createElement('small'); small.textContent = `${formatTime(item.createdAt)}${item.mine ? (item.read ? '  ✓✓' : '  ✓') : ''}`; bubble.append(small);
     messages.append(bubble);
   }
   if (atBottom) messages.scrollTop = messages.scrollHeight;
@@ -374,7 +389,8 @@ $('join-form').addEventListener('submit', async event => {
 $('match-btn').addEventListener('click', () => $('match-dialog').showModal());
 $('match-dialog-cancel').addEventListener('click', () => $('match-dialog').close());
 $('match-confirm').addEventListener('click', () => { $('match-dialog').close(); act('/api/queue'); });
-$('story-dialog-close').addEventListener('click', () => $('story-dialog').close());
+$('story-dialog-close').addEventListener('click', () => { clearTimeout(storyTimer); $('story-dialog').close(); });
+$('story-dialog').addEventListener('close', () => clearTimeout(storyTimer));
 $('story-more').addEventListener('click', () => $('story-actions').classList.toggle('hidden'));
 $('story-note').addEventListener('click', async () => {
   const body = prompt('익명 쪽지 내용');
@@ -394,6 +410,8 @@ $('story-report').addEventListener('click', async () => {
   catch (error) { flash(error.message); }
 });
 $('post-dialog-close').addEventListener('click', () => $('post-dialog').close());
+$('post-fab').addEventListener('click', () => $('post-create-dialog').showModal());
+$('post-create-close').addEventListener('click', () => $('post-create-dialog').close());
 $('send-comment').addEventListener('click', async () => {
   const body = $('post-action-body').value.trim(); if (!activePostId || !body) return;
   try { await api(`/api/posts/${activePostId}/comments`, 'POST', { body }); $('post-action-body').value = ''; const post = feed.find(item => item.id === activePostId); if (post) await openPostDialog(post); flash('익명 댓글을 남겼습니다.'); }
@@ -466,6 +484,7 @@ $('message-form').addEventListener('submit', async event => {
   button.disabled = true;
   try {
     await api(`/api/rooms/${selectedRoom}/messages`, 'POST', { body, clientId: pendingSend.clientId });
+    await api(`/api/rooms/${selectedRoom}/typing`, 'POST', { typing: false });
     pendingSend = null;
     sessionStorage.removeItem(pendingKey);
     input.value = '';
@@ -489,6 +508,38 @@ $('upload-profile-photo').addEventListener('click', async () => {
   try { await uploadPhoto('/api/profile/photos', file); $('profile-photo-input').value = ''; flash('소개 이미지를 등록했습니다. 담당자 승인 뒤 대화 상대에게 보입니다.'); }
   catch (error) { flash(error.message); }
 });
+$('points-open').addEventListener('click', () => {
+  const list = $('points-list'); list.replaceChildren();
+  [['110 포인트', '₩1,500'], ['550 포인트', '₩4,900'], ['1,400 포인트', '₩11,000'], ['2,900 포인트', '₩22,000']].forEach(([points, price]) => {
+    const button = document.createElement('button'); button.className = 'plan-option'; button.type = 'button'; button.innerHTML = `<b>${points}</b><strong>${price}</strong>`;
+    button.addEventListener('click', () => flash(`${points} 선택`)); list.append(button);
+  });
+  $('points-dialog').showModal();
+});
+$('subscribe-open').addEventListener('click', () => {
+  const list = $('subscribe-list'); list.replaceChildren();
+  [['1주', '₩4,900'], ['1개월', '₩9,900'], ['3개월', '₩24,900']].forEach(([period, price]) => {
+    const button = document.createElement('button'); button.className = 'plan-option'; button.type = 'button'; button.innerHTML = `<b>${period}</b><strong>${price}</strong>`;
+    button.addEventListener('click', () => flash(`${period} 구독 선택`)); list.append(button);
+  });
+  $('subscribe-dialog').showModal();
+});
+$('points-close').addEventListener('click', () => $('points-dialog').close());
+$('subscribe-close').addEventListener('click', () => $('subscribe-dialog').close());
+$('message-input').addEventListener('input', () => {
+  if (!selectedRoom || $('message-input').value.trim().length === 0) return;
+  if (Date.now() - lastTypingAt < 1500) return;
+  lastTypingAt = Date.now();
+  api(`/api/rooms/${selectedRoom}/typing`, 'POST', { typing: true }).catch(() => {});
+});
+$('chat-inbox-btn').addEventListener('click', async () => {
+  try { const result = await api('/api/inbox'); const list = $('notes-list'); list.replaceChildren(); if (!result.notes.length) list.textContent = '받은 쪽지 요청이 없습니다.'; for (const note of result.notes) { const row = document.createElement('article'); row.className = 'inbox-note'; row.textContent = note.body; const time = document.createElement('small'); time.textContent = formatTime(note.createdAt); row.append(time); list.append(row); } $('notes-dialog').showModal(); } catch (error) { flash(error.message); }
+});
+$('profile-visitors-btn').addEventListener('click', async () => {
+  try { const result = await api('/api/profile/visitors'); const list = $('visitors-list'); list.replaceChildren(); if (!result.visitors.length) list.textContent = '아직 프로필 방문자가 없습니다.'; for (const visitor of result.visitors) { const row = document.createElement('article'); row.className = 'inbox-note'; row.textContent = visitor.gender === 'female' ? '여성 방문자' : visitor.gender === 'male' ? '남성 방문자' : '방문자'; const time = document.createElement('small'); time.textContent = formatTime(visitor.visitedAt); row.append(time); list.append(row); } $('visitors-dialog').showModal(); } catch (error) { flash(error.message); }
+});
+$('notes-close').addEventListener('click', () => $('notes-dialog').close());
+$('visitors-close').addEventListener('click', () => $('visitors-dialog').close());
 $('theme-toggle').addEventListener('click', () => {
   document.body.classList.toggle('dark');
   const dark = document.body.classList.contains('dark');
@@ -501,6 +552,8 @@ document.querySelectorAll('.nav-item').forEach(button => button.addEventListener
   const selected = button.dataset.tab;
   document.querySelectorAll('.app-tab').forEach(tab => tab.classList.toggle('hidden', tab.id !== `tab-${selected}`));
   document.querySelectorAll('.nav-item').forEach(item => item.classList.toggle('selected', item === button));
+  $('post-fab').classList.toggle('hidden', selected !== 'posts');
+  $('match-btn').classList.toggle('hidden', selected !== 'chats');
 }));
 
 render();

@@ -161,6 +161,19 @@ function createDatabase(dbPath) {
       body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 500), created_at INTEGER NOT NULL, read_at INTEGER
     );
     CREATE INDEX IF NOT EXISTS private_notes_receiver ON private_notes(receiver_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS typing_states (
+      room_id TEXT NOT NULL REFERENCES rooms(id), user_id TEXT NOT NULL REFERENCES users(id),
+      updated_at INTEGER NOT NULL, PRIMARY KEY(room_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS profile_visits (
+      owner_id TEXT NOT NULL REFERENCES users(id), visitor_id TEXT NOT NULL REFERENCES users(id),
+      visited_at INTEGER NOT NULL, PRIMARY KEY(owner_id, visitor_id), CHECK(owner_id <> visitor_id)
+    );
+    CREATE INDEX IF NOT EXISTS profile_visits_owner ON profile_visits(owner_id, visited_at DESC);
+    CREATE TABLE IF NOT EXISTS post_views (
+      post_id TEXT NOT NULL REFERENCES posts(id), viewer_id TEXT NOT NULL REFERENCES users(id),
+      viewed_at INTEGER NOT NULL, PRIMARY KEY(post_id, viewer_id)
+    );
     CREATE TABLE IF NOT EXISTS social_reports (
       id TEXT PRIMARY KEY, content_type TEXT NOT NULL CHECK(content_type IN ('posts','stories')),
       content_id TEXT NOT NULL, reporter_id TEXT NOT NULL REFERENCES users(id), reason TEXT NOT NULL,
@@ -174,6 +187,7 @@ function createDatabase(dbPath) {
   // 기존 로컬 DB의 대화 기록은 유지하고 재전송 식별자만 추가한다.
   const messageColumns = db.prepare('PRAGMA table_info(messages)').all();
   if (!messageColumns.some(column => column.name === 'client_id')) db.exec('ALTER TABLE messages ADD COLUMN client_id TEXT');
+  if (!messageColumns.some(column => column.name === 'read_at')) db.exec('ALTER TABLE messages ADD COLUMN read_at INTEGER');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS messages_client_id ON messages(room_id, sender_id, client_id)');
   const userColumns = db.prepare('PRAGMA table_info(users)').all();
   if (!userColumns.some(column => column.name === 'deleted_at')) db.exec('ALTER TABLE users ADD COLUMN deleted_at INTEGER');
@@ -443,7 +457,11 @@ function roomView(db, room, userId, includeMessages = false) {
     peer: { displayName: peer.deleted_at ? '탈퇴한 사용자' : room.status === 'connected' ? peer.nickname : '랜덤 상대', intro: peer.deleted_at ? null : room.status === 'connected' ? peer.intro : null },
     request: request ? { id: request.id, direction: request.requester_id === userId ? 'sent' : 'received', status: request.status, expiresAt: request.expires_at } : null
   };
-  if (includeMessages) view.messages = db.prepare('SELECT id, sender_id, client_id, body, created_at FROM messages WHERE room_id = ? ORDER BY created_at ASC, rowid ASC LIMIT 500').all(room.id).map(m => ({ id: m.id, mine: m.sender_id === userId, clientId: m.sender_id === userId ? m.client_id : undefined, body: m.body, createdAt: m.created_at }));
+  if (includeMessages) {
+    const typing = db.prepare('SELECT 1 FROM typing_states WHERE room_id = ? AND user_id = ? AND updated_at >= ?').get(room.id, peerId, Date.now() - 5000);
+    view.peerTyping = !!typing;
+    view.messages = db.prepare('SELECT id, sender_id, client_id, body, created_at, read_at FROM messages WHERE room_id = ? ORDER BY created_at ASC, rowid ASC LIMIT 500').all(room.id).map(m => ({ id: m.id, mine: m.sender_id === userId, clientId: m.sender_id === userId ? m.client_id : undefined, body: m.body, createdAt: m.created_at, read: m.sender_id === userId ? !!m.read_at : undefined }));
+  }
   return view;
 }
 
@@ -722,6 +740,8 @@ function createApp(options = {}) {
       // 공개 피드와 스토리는 로그인한 로컬 테스트 사용자끼리만 본다. 랜덤 대화방 미디어와는 저장·권한을 분리한다.
       if ((pathname === '/api/posts' || pathname === '/api/feed') && req.method === 'GET') {
         const posts = db.prepare(`SELECT p.id,p.title,p.body,p.anonymous_label AS anonymousLabel,u.gender,p.created_at AS createdAt,p.image IS NOT NULL AS hasImage,
+          (SELECT count(*) FROM post_comments c WHERE c.post_id = p.id) AS commentCount,
+          (SELECT count(*) FROM post_views v WHERE v.post_id = p.id) AS viewCount,
           p.author_id = ? AS mine
           FROM posts p JOIN users u ON u.id = p.author_id AND u.deleted_at IS NULL
           ORDER BY p.created_at DESC LIMIT 40`).all(user.id);
@@ -735,10 +755,18 @@ function createApp(options = {}) {
         if (!body || body.length > 500) throw httpError(400, '게시물은 1~500자로 입력하세요.');
         if (title.length > 80) throw httpError(400, '게시물 제목은 80자 이하로 입력하세요.');
         const id = uuid();
-        db.prepare('INSERT INTO posts(id,author_id,title,body,anonymous_label,created_at) VALUES (?,?,?,?,?,?)').run(id, user.id, title || '익명 이야기', body, anonymousLabel(id), now);
+        db.prepare('INSERT INTO posts(id,author_id,title,body,anonymous_label,created_at) VALUES (?,?,?,?,?,?)').run(id, user.id, title, body, anonymousLabel(id), now);
         return send(res, 201, { id });
       }
       const postRoute = /^\/api\/posts\/([^/]+)(?:\/(image))?$/.exec(pathname);
+      const postViewRoute = /^\/api\/posts\/([^/]+)\/view$/.exec(pathname);
+      if (postViewRoute && req.method === 'POST') {
+        const post = db.prepare('SELECT author_id FROM posts WHERE id = ?').get(postViewRoute[1]);
+        if (!post) throw httpError(404, '게시물을 찾을 수 없습니다.');
+        if (post.author_id !== user.id) db.prepare('INSERT INTO post_views(post_id,viewer_id,viewed_at) VALUES (?,?,?) ON CONFLICT(post_id,viewer_id) DO NOTHING').run(postViewRoute[1], user.id, now);
+        const viewCount = db.prepare('SELECT count(*) AS n FROM post_views WHERE post_id = ?').get(postViewRoute[1]).n;
+        return send(res, 200, { viewCount });
+      }
       const socialAction = /^\/api\/(posts|stories)\/([^/]+)\/(message|block|report)$/.exec(pathname);
       if (socialAction && req.method === 'POST') {
         const [, table, contentId, action] = socialAction;
@@ -896,6 +924,12 @@ function createApp(options = {}) {
         db.prepare('UPDATE private_notes SET read_at = ? WHERE receiver_id = ? AND read_at IS NULL').run(now, user.id);
         return send(res, 200, { notes: notes.map(note => ({ ...note, read: !!note.read })) });
       }
+      if (pathname === '/api/profile/visitors' && req.method === 'GET') {
+        const visitors = db.prepare(`SELECT v.visited_at AS visitedAt, u.gender
+          FROM profile_visits v JOIN users u ON u.id = v.visitor_id AND u.deleted_at IS NULL
+          WHERE v.owner_id = ? ORDER BY v.visited_at DESC LIMIT 100`).all(user.id);
+        return send(res, 200, { visitors });
+      }
       if (pathname === '/api/state' && req.method === 'GET') {
         expireRequests(db, now);
         const waiting = !!db.prepare('SELECT 1 FROM queue WHERE user_id = ?').get(user.id);
@@ -944,6 +978,7 @@ function createApp(options = {}) {
         if (!db.prepare('SELECT 1 FROM users WHERE id = ? AND deleted_at IS NULL').get(peerId)) throw httpError(404, '공개된 프로필 사진을 찾을 수 없습니다.');
         if (db.prepare('SELECT 1 FROM blocks WHERE (user_id = ? AND target_id = ?) OR (user_id = ? AND target_id = ?)').get(user.id, peerId, peerId, user.id)) throw httpError(404, '공개된 프로필 사진을 찾을 수 없습니다.');
         if (!peerProfilePhoto[2]) {
+          db.prepare('INSERT INTO profile_visits(owner_id,visitor_id,visited_at) VALUES (?,?,?) ON CONFLICT(owner_id,visitor_id) DO UPDATE SET visited_at = excluded.visited_at').run(peerId, user.id, now);
           const photos = db.prepare("SELECT id,width,height,created_at AS createdAt FROM profile_photos WHERE owner_id = ? AND status = 'approved' ORDER BY created_at DESC LIMIT 5").all(peerId);
           return send(res, 200, { photos });
         }
@@ -951,13 +986,21 @@ function createApp(options = {}) {
         if (!photo) throw httpError(404, '공개된 프로필 사진을 찾을 수 없습니다.');
         return sendPhoto(res, photo.image);
       }
-      const roomMatch = /^\/api\/rooms\/([^/]+)(?:\/(messages|photos|videos|request\/decision|request|leave|block|report))?$/.exec(pathname);
+      const roomMatch = /^\/api\/rooms\/([^/]+)(?:\/(messages|photos|videos|typing|request\/decision|request|leave|block|report))?$/.exec(pathname);
       if (!roomMatch) throw httpError(404, '기능을 찾을 수 없습니다.');
       const room = roomFor(db, roomMatch[1], user.id);
       const action = roomMatch[2];
       if (!action && req.method === 'GET') {
         expireRequests(db, now);
+        db.prepare('UPDATE messages SET read_at = ? WHERE room_id = ? AND sender_id <> ? AND read_at IS NULL').run(now, room.id, user.id);
         return send(res, 200, roomView(db, room, user.id, true));
+      }
+      if (action === 'typing' && req.method === 'POST') {
+        if (!['random', 'connected'].includes(room.status)) throw httpError(409, '종료된 대화에는 입력 상태를 남길 수 없습니다.');
+        const input = await readJson(req);
+        if (input.typing) db.prepare('INSERT INTO typing_states(room_id,user_id,updated_at) VALUES (?,?,?) ON CONFLICT(room_id,user_id) DO UPDATE SET updated_at = excluded.updated_at').run(room.id, user.id, now);
+        else db.prepare('DELETE FROM typing_states WHERE room_id = ? AND user_id = ?').run(room.id, user.id);
+        return send(res, 200, { typing: !!input.typing });
       }
       if (action === 'messages' && req.method === 'POST') {
         const input = await readJson(req);
