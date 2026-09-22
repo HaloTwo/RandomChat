@@ -889,6 +889,38 @@ public final class MainActivity extends Activity {
         row.addView(bubble, new LinearLayout.LayoutParams(-2, -2)); messagesView.addView(row, new LinearLayout.LayoutParams(-1, -2));
     }
 
+    // 대화 목록을 벗어나 방을 열 때만 메시지 입력과 전송 영역을 보여 준다.
+    private void showRoomConversation(String id) {
+        roomId = id;
+        background(() -> {
+            JSONObject room = json("GET", "/api/rooms/" + id, null);
+            JSONArray messages = room.optJSONArray("messages");
+            runOnUiThread(() -> {
+                ScrollView scroll = new ScrollView(this);
+                LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); body.setPadding(dp(14), dp(8), dp(14), dp(8)); scroll.addView(body);
+                TextView title = new TextView(this); title.setText("연결된 대화"); title.setTextColor(COLOR_TEXT); title.setTextSize(21); title.setTypeface(null, Typeface.BOLD); body.addView(title);
+                if (messages != null) for (int i = 0; i < messages.length(); i++) {
+                    JSONObject message = messages.optJSONObject(i); if (message == null) continue;
+                    boolean mine = message.optBoolean("mine");
+                    LinearLayout row = new LinearLayout(this); row.setGravity(mine ? Gravity.RIGHT : Gravity.LEFT); row.setPadding(0, dp(4), 0, dp(4));
+                    TextView bubble = new TextView(this); bubble.setText(message.optString("body") + (mine ? (message.optBoolean("read") ? "  ✓✓" : "  ✓") : "")); bubble.setTextSize(16); bubble.setTextColor(mine ? COLOR_BG : COLOR_TEXT); bubble.setPadding(dp(14), dp(10), dp(14), dp(10)); bubble.setBackground(round(mine ? COLOR_BLUE : COLOR_FIELD, 18)); row.addView(bubble); body.addView(row);
+                }
+                if (room.optBoolean("peerTyping")) label(body, "상대가 입력 중입니다…");
+                EditText compose = dialogInput("메시지를 입력해 주세요", false); body.addView(compose, new LinearLayout.LayoutParams(-1, dp(52)));
+                LinearLayout actions = new LinearLayout(this); actions.setGravity(Gravity.CENTER_VERTICAL);
+                Button photo = compactButton("＋ 사진", () -> { roomId = id; pickPhoto(); }); actions.addView(photo, new LinearLayout.LayoutParams(0, dp(46), 1f));
+                Button send = compactButton("보내기", () -> background(() -> {
+                    String text = compose.getText().toString().trim(); if (text.isEmpty()) throw new IllegalArgumentException("메시지를 입력하세요.");
+                    json("POST", "/api/rooms/" + id + "/messages", new JSONObject().put("body", text).put("clientId", UUID.randomUUID().toString()));
+                    json("POST", "/api/rooms/" + id + "/typing", new JSONObject().put("typing", false));
+                    runOnUiThread(() -> { compose.setText(""); });
+                    refresh();
+                })); actions.addView(send, new LinearLayout.LayoutParams(dp(96), dp(46))); body.addView(actions);
+                new android.app.AlertDialog.Builder(this).setView(scroll).setNegativeButton("닫기", null).show();
+            });
+        });
+    }
+
     // 라운지 글은 랜덤 대화와 별개이며, 사진을 고른 경우에는 본문 생성 뒤 정규화 사진을 연결한다.
     private void publishSocial(String kind, boolean chooseImage) {
         if (token.isEmpty()) { notice("테스트 계정을 먼저 만드세요."); return; }
@@ -960,10 +992,9 @@ public final class MainActivity extends Activity {
                     JSONObject room = rooms.optJSONObject(i);
                     if (room == null) continue;
                     String id = room.optString("id");
-                    addRoomCard(room, () -> openRoom(id));
+                    addRoomCard(room, () -> showRoomConversation(id));
                 }
                 if (!roomId.isEmpty()) openRoom(roomId);
-                else if (rooms.length() > 0) openRoom(rooms.optJSONObject(0).optString("id"));
                 ownProfilePhotosView.removeAllViews();
                 if (ownProfilePhotos.length() == 0) label(ownProfilePhotosView, "등록된 사진 없음");
                 for (int i = 0; i < ownProfilePhotos.length(); i++) {
