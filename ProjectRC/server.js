@@ -862,13 +862,17 @@ function createApp(options = {}) {
       }
       if (pathname === '/api/stories' && req.method === 'GET') {
         db.prepare('DELETE FROM stories WHERE expires_at <= ?').run(now);
-        const stories = db.prepare(`SELECT s.id,s.body,s.anonymous_label AS anonymousLabel,u.gender,s.created_at AS createdAt,s.expires_at AS expiresAt,s.image IS NOT NULL AS hasImage,
+        const stories = db.prepare(`SELECT s.id,s.body,u.gender,s.created_at AS createdAt,s.expires_at AS expiresAt,s.image IS NOT NULL AS hasImage,
           (SELECT count(*) FROM story_view_events v WHERE v.story_id = s.id) AS viewCount,
           (SELECT count(*) FROM story_views v WHERE v.story_id = s.id) AS viewerCount,
-          s.author_id = ? AS mine
+          s.author_id = ? AS mine, s.author_id AS storyOwnerId
           FROM stories s JOIN users u ON u.id = s.author_id AND u.deleted_at IS NULL
           WHERE s.expires_at > ? AND s.image IS NOT NULL ORDER BY s.created_at DESC LIMIT 30`).all(user.id, now);
-        return send(res, 200, { stories: stories.map(s => ({ ...s, mine: !!s.mine, hasImage: !!s.hasImage })) });
+        // 화면은 이름이나 내부 사용자 ID를 표시하지 않고, 같은 작성자의 스토리만 한 묶음으로 재생한다.
+        return send(res, 200, { stories: stories.map(({ storyOwnerId, ...s }) => ({
+          ...s, mine: !!s.mine, hasImage: !!s.hasImage,
+          storyOwnerKey: crypto.createHash('sha256').update('story-owner:' + storyOwnerId).digest('hex').slice(0, 16)
+        })) });
       }
       if (pathname === '/api/stories' && req.method === 'POST') {
         const body = String((await readJson(req)).body || '').trim();

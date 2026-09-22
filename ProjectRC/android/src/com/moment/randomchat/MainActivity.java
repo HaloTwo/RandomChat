@@ -59,7 +59,7 @@ public final class MainActivity extends Activity {
     private EditText serverInput, nicknameInput, messageInput, reportInput, storyInput, postTitleInput, postInput;
     private Spinner genderInput;
     private TextView statusView, pageTitle, pageSubtitle;
-    private LinearLayout roomsView, messagesView, photosView, videosView, ownProfilePhotosView, peerProfilePhotosView, storiesView, postsView;
+    private LinearLayout roomsView, messagesView, photosView, videosView, ownProfilePhotosView, peerProfilePhotosView, storiesView, postsView, visitorsView;
     private ImageView photoView;
     private VideoView videoView;
     private File videoFile;
@@ -69,8 +69,8 @@ public final class MainActivity extends Activity {
     private String pendingSocialId = "";
     private String pendingSocialToken = "";
     private JSONArray storySequence = new JSONArray();
-    private LinearLayout loungeSection, chatSection, profileSection;
-    private Button loungeTab, chatTab, profileTab;
+    private LinearLayout loungeSection, chatSection, profileSection, visitorsSection, quickBar;
+    private Button loungeTab, visitorsTab, chatTab, profileTab;
     private volatile long lastTypingAt;
     private static final int COLOR_BG = Color.rgb(23, 23, 29);
     private static final int COLOR_PANEL = Color.rgb(36, 36, 45);
@@ -126,6 +126,8 @@ public final class MainActivity extends Activity {
         statusView.setPadding(dp(12), dp(8), dp(12), dp(8));
         statusView.setBackground(round(COLOR_BLUE, 14));
         hero.addView(statusView);
+        // 참고 화면처럼 첫 화면은 피드에 집중한다. 연결 상태는 알림 칩으로만 남기고 큰 소개 영역은 숨긴다.
+        hero.setVisibility(View.GONE);
 
         LinearLayout navigation = new LinearLayout(this);
         navigation.setOrientation(LinearLayout.HORIZONTAL);
@@ -135,10 +137,14 @@ public final class MainActivity extends Activity {
         loungeTab = tabButton(navigation, "게시물", () -> selectTab("lounge"));
         chatTab = tabButton(navigation, "내 대화", () -> selectTab("chat"));
         profileTab = tabButton(navigation, "내 활동", () -> selectTab("profile"));
+        navigation.setVisibility(View.GONE);
 
         loungeSection = section(page);
-        heading(loungeSection, "지금의 순간", 26);
-        label(loungeSection, "사진과 함께 남기는 24시간 스토리");
+        LinearLayout homeTop = new LinearLayout(this); homeTop.setGravity(Gravity.CENTER_VERTICAL); homeTop.setPadding(0, dp(4), 0, dp(8));
+        Button refreshHome = compactButton("●", this::refresh); refreshHome.setTextColor(COLOR_BLUE); homeTop.addView(refreshHome, new LinearLayout.LayoutParams(dp(52), dp(44)));
+        TextView homeTitle = new TextView(this); homeTitle.setText("게시물"); homeTitle.setTextColor(COLOR_TEXT); homeTitle.setTextSize(23); homeTitle.setTypeface(null, Typeface.BOLD); homeTop.addView(homeTitle, new LinearLayout.LayoutParams(0, dp(44), 1f));
+        Button openVisitors = compactButton("◉", () -> selectTab("visitors")); openVisitors.setTextColor(COLOR_TEXT); homeTop.addView(openVisitors, new LinearLayout.LayoutParams(dp(52), dp(44)));
+        loungeSection.addView(homeTop, new LinearLayout.LayoutParams(-1, -2));
         storyInput = new EditText(this);
         postTitleInput = new EditText(this);
         postInput = new EditText(this);
@@ -148,8 +154,6 @@ public final class MainActivity extends Activity {
         storiesView.setOrientation(LinearLayout.HORIZONTAL);
         storyScroll.addView(storiesView);
         loungeSection.addView(storyScroll, new LinearLayout.LayoutParams(-1, dp(118)));
-        button(loungeSection, "＋ 게시물 또는 스토리 작성", this::showComposerChoice);
-        heading(loungeSection, "게시물", 22);
         postsView = column(loungeSection);
 
         chatSection = section(page);
@@ -224,8 +228,16 @@ public final class MainActivity extends Activity {
         videoView.setOnErrorListener((player, what, extra) -> { stopVideo(); notice("영상을 재생할 수 없습니다."); return true; });
         button(chatSection, "영상 재생 닫기", this::stopVideo);
 
+        visitorsSection = section(page);
+        LinearLayout visitorTop = new LinearLayout(this); visitorTop.setGravity(Gravity.CENTER_VERTICAL); visitorTop.setPadding(0, dp(6), 0, dp(10));
+        Button backHome = compactButton("‹", () -> selectTab("lounge")); backHome.setTextSize(30); visitorTop.addView(backHome, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        TextView visitorTitle = new TextView(this); visitorTitle.setText("프로필 방문자"); visitorTitle.setTextColor(COLOR_TEXT); visitorTitle.setTextSize(23); visitorTitle.setTypeface(null, Typeface.BOLD); visitorTitle.setGravity(Gravity.CENTER); visitorTop.addView(visitorTitle, new LinearLayout.LayoutParams(0, dp(48), 1f));
+        Button visitorRefresh = compactButton("↻", this::refreshVisitors); visitorTop.addView(visitorRefresh, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        visitorsSection.addView(visitorTop, new LinearLayout.LayoutParams(-1, -2));
+        visitorsView = column(visitorsSection);
+
         profileSection = section(page);
-        heading(profileSection, "내 활동 · 설정", 26);
+        heading(profileSection, "내 계정", 26);
         String savedAddress = getPreferences(MODE_PRIVATE).getString(PREF_SERVER_ADDRESS, "http://192.168.0.2:3000");
         serverAddress = savedAddress;
         if (token.isEmpty()) {
@@ -262,23 +274,33 @@ public final class MainActivity extends Activity {
             });
         });
         } else {
-            label(profileSection, "이 기기는 PC 서버와 연결되어 있습니다.");
+            label(profileSection, "내 설정과 활동을 관리합니다.");
             button(profileSection, "내 글 · 내 댓글", this::showMyActivity);
-            button(profileSection, "프로필 방문자", this::showProfileVisitors);
-            button(profileSection, "연결 설정", this::showConnectionSettings);
+            button(profileSection, "프로필 방문자", () -> selectTab("visitors"));
+            button(profileSection, "설정", this::showConnectionSettings);
         }
         heading(profileSection, "내 프로필 사진", 20);
         label(profileSection, "연결 수락 뒤 상대에게만 공개됩니다.");
         button(profileSection, "프로필 사진 선택·등록", this::pickProfilePhoto);
         ownProfilePhotosView = column(profileSection);
-        LinearLayout quickBar = new LinearLayout(this);
-        quickBar.setOrientation(LinearLayout.HORIZONTAL); quickBar.setGravity(Gravity.CENTER); quickBar.setPadding(dp(18), dp(8), dp(18), dp(12)); quickBar.setBackground(round(COLOR_PANEL, 24));
-        Button quickMatch = compactButton("⌕  찾기", () -> { if (token.isEmpty()) { selectTab("profile"); notice("먼저 서버 연결과 테스트 계정을 완료하세요."); } else { selectTab("chat"); showRandomMatchDialog(); } });
-        Button quickCreate = compactButton("＋", () -> { if (token.isEmpty()) { selectTab("profile"); notice("먼저 서버 연결과 테스트 계정을 완료하세요."); } else { selectTab("lounge"); showComposerChoice(); } });
-        quickCreate.setTextSize(24); quickCreate.setTextColor(COLOR_BG); quickCreate.setBackground(round(COLOR_BLUE, 24));
-        quickBar.addView(quickMatch, new LinearLayout.LayoutParams(0, dp(52), 1f));
-        LinearLayout.LayoutParams createParams = new LinearLayout.LayoutParams(dp(72), dp(52)); createParams.leftMargin = dp(10); quickBar.addView(quickCreate, createParams);
+        quickBar = new LinearLayout(this);
+        quickBar.setOrientation(LinearLayout.HORIZONTAL); quickBar.setGravity(Gravity.CENTER_VERTICAL); quickBar.setPadding(dp(16), dp(8), dp(16), dp(8)); quickBar.setBackgroundColor(Color.TRANSPARENT);
+        Button quickMatch = compactButton("⌕", () -> { if (token.isEmpty()) { selectTab("profile"); notice("먼저 서버 연결과 테스트 계정을 완료하세요."); } else { showRandomMatchDialog(); } });
+        quickMatch.setTextSize(27); quickMatch.setTextColor(COLOR_BG); quickMatch.setBackground(round(COLOR_BLUE, 28));
+        Button quickCreate = compactButton("＋", () -> { if (token.isEmpty()) { selectTab("profile"); notice("먼저 서버 연결과 테스트 계정을 완료하세요."); } else { showComposerChoice(); } });
+        quickCreate.setTextSize(30); quickCreate.setTextColor(COLOR_BG); quickCreate.setBackground(round(COLOR_BLUE, 28));
+        quickBar.addView(quickMatch, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        quickBar.addView(new View(this), new LinearLayout.LayoutParams(0, dp(1), 1f));
+        quickBar.addView(quickCreate, new LinearLayout.LayoutParams(dp(56), dp(56)));
         screen.addView(quickBar, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout bottomNavigation = new LinearLayout(this);
+        bottomNavigation.setOrientation(LinearLayout.HORIZONTAL); bottomNavigation.setGravity(Gravity.CENTER); bottomNavigation.setPadding(dp(8), dp(4), dp(8), dp(10)); bottomNavigation.setBackground(round(COLOR_PANEL, 26));
+        loungeTab = tabButton(bottomNavigation, "▤\n게시물", () -> selectTab("lounge"));
+        visitorsTab = tabButton(bottomNavigation, "♥\n방문", () -> selectTab("visitors"));
+        chatTab = tabButton(bottomNavigation, "●\n대화", () -> selectTab("chat"));
+        profileTab = tabButton(bottomNavigation, "♙\n내 계정", () -> selectTab("profile"));
+        loungeTab.setTextSize(11); visitorsTab.setTextSize(11); chatTab.setTextSize(11); profileTab.setTextSize(11);
+        screen.addView(bottomNavigation, new LinearLayout.LayoutParams(-1, -2));
         selectTab(token.isEmpty() ? "profile" : "lounge");
         if (!token.isEmpty()) refresh();
     }
@@ -377,13 +399,18 @@ public final class MainActivity extends Activity {
         // 계정 생성 전에는 앱 기능 화면을 열지 않고 연결 설정으로 돌린다.
         if (token.isEmpty() && !"profile".equals(tab)) tab = "profile";
         boolean lounge = "lounge".equals(tab);
+        boolean visitors = "visitors".equals(tab);
         boolean chat = "chat".equals(tab);
         loungeSection.setVisibility(lounge ? View.VISIBLE : View.GONE);
+        visitorsSection.setVisibility(visitors ? View.VISIBLE : View.GONE);
         chatSection.setVisibility(chat ? View.VISIBLE : View.GONE);
-        profileSection.setVisibility(!lounge && !chat ? View.VISIBLE : View.GONE);
+        profileSection.setVisibility(!lounge && !visitors && !chat ? View.VISIBLE : View.GONE);
+        quickBar.setVisibility(lounge ? View.VISIBLE : View.GONE);
         styleTab(loungeTab, lounge);
+        styleTab(visitorsTab, visitors);
         styleTab(chatTab, chat);
-        styleTab(profileTab, !lounge && !chat);
+        styleTab(profileTab, !lounge && !visitors && !chat);
+        if (visitors) refreshVisitors();
     }
     private void styleTab(Button view, boolean selected) {
         view.setTextColor(selected ? Color.rgb(20, 35, 44) : COLOR_TEXT);
@@ -525,13 +552,27 @@ public final class MainActivity extends Activity {
     }
 
     private void showProfileVisitors() {
+        selectTab("visitors");
+    }
+
+    private void refreshVisitors() {
+        if (token.isEmpty()) return;
         background(() -> {
             JSONArray visitors = json("GET", "/api/profile/visitors", null).optJSONArray("visitors");
             runOnUiThread(() -> {
-                LinearLayout list = new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL); list.setPadding(dp(18), dp(8), dp(18), dp(8));
-                if (visitors == null || visitors.length() == 0) label(list, "아직 프로필 방문자가 없습니다.");
-                else for (int i = 0; i < visitors.length(); i++) { JSONObject visitor = visitors.optJSONObject(i); if (visitor != null) label(list, ("male".equals(visitor.optString("gender")) ? "● 남성 방문" : "● 여성 방문")); }
-                new android.app.AlertDialog.Builder(this).setTitle("프로필 방문자").setView(list).setPositiveButton("닫기", null).show();
+                visitorsView.removeAllViews();
+                if (visitors == null || visitors.length() == 0) {
+                    TextView empty = label(visitorsView, "아직 방문자가 없어요\n누군가 내 프로필을 보면 여기에 표시돼요.");
+                    empty.setTextSize(17); empty.setGravity(Gravity.CENTER); empty.setPadding(0, dp(160), 0, dp(160));
+                    return;
+                }
+                for (int i = 0; i < visitors.length(); i++) {
+                    JSONObject visitor = visitors.optJSONObject(i); if (visitor == null) continue;
+                    LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(dp(14), dp(14), dp(14), dp(14)); row.setBackground(round(COLOR_FIELD, 18));
+                    TextView icon = new TextView(this); icon.setText("●"); icon.setTextSize(28); icon.setTextColor("male".equals(visitor.optString("gender")) ? COLOR_BLUE : COLOR_PINK); row.addView(icon, new LinearLayout.LayoutParams(dp(48), dp(44)));
+                    TextView text = new TextView(this); text.setText("프로필을 확인했어요\n" + relativeTime(visitor.optLong("visitedAt"))); text.setTextColor(COLOR_TEXT); text.setTextSize(15); row.addView(text, new LinearLayout.LayoutParams(0, -2, 1f));
+                    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.topMargin = dp(8); visitorsView.addView(row, params);
+                }
             });
         });
     }
@@ -597,6 +638,11 @@ public final class MainActivity extends Activity {
             .setPositiveButton("올리기", (dialog, which) -> publishSocial("posts", false)).show();
     }
 
+    private String relativeTime(long time) {
+        long minutes = Math.max(1, (System.currentTimeMillis() - time) / 60000);
+        return minutes < 60 ? minutes + "분 전" : (minutes / 60) + "시간 전";
+    }
+
     private void addStoryComposerCircle() {
         LinearLayout item = new LinearLayout(this); item.setOrientation(LinearLayout.VERTICAL); item.setGravity(Gravity.CENTER);
         TextView plus = new TextView(this); plus.setText("+"); plus.setTextSize(32); plus.setTextColor(COLOR_BG); plus.setGravity(Gravity.CENTER);
@@ -608,14 +654,17 @@ public final class MainActivity extends Activity {
         storiesView.addView(item, new LinearLayout.LayoutParams(dp(84), -1));
     }
 
-    private void addStoryCircle(JSONObject story) {
+    // 동일 작성자의 스토리를 한 원으로 묶고, 열면 5초 간격으로 그 묶음 안에서만 넘긴다.
+    private void addStoryCircle(JSONArray group) {
+        JSONObject story = group.optJSONObject(0); if (story == null) return;
         String id = story.optString("id");
         LinearLayout item = new LinearLayout(this); item.setOrientation(LinearLayout.VERTICAL); item.setGravity(Gravity.CENTER); item.setPadding(dp(4), 0, dp(6), 0);
         ImageView image = new ImageView(this); image.setScaleType(ImageView.ScaleType.CENTER_CROP); image.setBackground(round(story.optBoolean("mine") ? COLOR_BLUE : COLOR_PINK, 34)); image.setClipToOutline(true);
         item.addView(image, new LinearLayout.LayoutParams(dp(68), dp(68)));
-        TextView caption = new TextView(this); caption.setText(story.optBoolean("mine") ? "내 스토리" : "스토리"); caption.setTextColor(COLOR_TEXT); caption.setTextSize(11); caption.setGravity(Gravity.CENTER);
+        TextView caption = new TextView(this); caption.setText(story.optBoolean("mine") ? "내 스토리  +" : "스토리"); caption.setTextColor(COLOR_TEXT); caption.setTextSize(11); caption.setGravity(Gravity.CENTER);
         item.addView(caption, new LinearLayout.LayoutParams(dp(82), dp(30)));
-        item.setOnClickListener(view -> openStory(story)); storiesView.addView(item, new LinearLayout.LayoutParams(dp(88), -1));
+        if (story.optBoolean("mine")) caption.setOnClickListener(view -> showStoryComposer());
+        item.setOnClickListener(view -> { storySequence = group; openStory(story); }); storiesView.addView(item, new LinearLayout.LayoutParams(dp(88), -1));
         background(() -> {
             byte[] bytes = request("GET", "/api/stories/" + id + "/image", null, null);
             Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
@@ -880,17 +929,23 @@ public final class MainActivity extends Activity {
             JSONArray stories = json("GET", "/api/stories", null).getJSONArray("stories");
             JSONArray posts = json("GET", "/api/feed", null).getJSONArray("posts");
             runOnUiThread(() -> {
-                storySequence = stories;
                 storiesView.removeAllViews();
-                addStoryComposerCircle();
-                if (stories.length() == 0) {
-                    TextView empty = new TextView(this); empty.setText("첫 스토리"); empty.setTextColor(COLOR_MUTED); empty.setGravity(Gravity.CENTER); empty.setTextSize(12);
-                    storiesView.addView(empty, new LinearLayout.LayoutParams(dp(92), -1));
-                }
+                java.util.LinkedHashMap<String, JSONArray> storyGroups = new java.util.LinkedHashMap<>();
                 for (int i = 0; i < stories.length(); i++) {
                     JSONObject story = stories.optJSONObject(i);
                     if (story == null) continue;
-                    if (story.optBoolean("hasImage")) addStoryCircle(story);
+                    String ownerKey = story.optString("storyOwnerKey");
+                    JSONArray group = storyGroups.get(ownerKey);
+                    if (group == null) { group = new JSONArray(); storyGroups.put(ownerKey, group); }
+                    group.put(story);
+                }
+                boolean haveMine = false;
+                for (java.util.Map.Entry<String, JSONArray> entry : storyGroups.entrySet()) {
+                    if (entry.getValue().optJSONObject(0).optBoolean("mine")) { addStoryCircle(entry.getValue()); haveMine = true; }
+                }
+                if (!haveMine) addStoryComposerCircle();
+                for (java.util.Map.Entry<String, JSONArray> entry : storyGroups.entrySet()) {
+                    if (!entry.getValue().optJSONObject(0).optBoolean("mine")) addStoryCircle(entry.getValue());
                 }
                 postsView.removeAllViews();
                 if (posts.length() == 0) label(postsView, "아직 게시물이 없습니다.");

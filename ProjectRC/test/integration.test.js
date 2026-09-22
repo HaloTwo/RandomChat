@@ -63,6 +63,18 @@ test('라운지 플래그는 Android가 읽을 수 있는 boolean이다', async 
   const story = (await call('/api/stories', 'GET', null, a.token)).data.stories[0];
   assert.equal(story.mine, true);
   assert.equal(story.hasImage, true);
+  assert.match(story.storyOwnerKey, /^[a-f0-9]{16}$/);
+}));
+
+test('같은 작성자의 사진 스토리는 안전한 동일 묶음 키로 내려온다', async () => withApp(async ({ app, call, user }) => {
+  const author = await user('여러스토리작성자'), reader = await user('스토리독자');
+  const first = await call('/api/stories', 'POST', { body: '첫 번째' }, author.token);
+  const second = await call('/api/stories', 'POST', { body: '두 번째' }, author.token);
+  app.db.prepare('UPDATE stories SET image = ? WHERE id IN (?, ?)').run(Buffer.from('fixture'), first.data.id, second.data.id);
+  const stories = (await call('/api/stories', 'GET', null, reader.token)).data.stories;
+  assert.equal(stories.length, 2);
+  assert.equal(stories[0].storyOwnerKey, stories[1].storyOwnerKey);
+  assert.equal(JSON.stringify(stories).includes('여러스토리작성자'), false);
 }));
 
 test('공개 라운지는 익명 번호·성별만 보여 주고 댓글과 쪽지를 전달한다', async () => withApp(async ({ call, user }) => {
