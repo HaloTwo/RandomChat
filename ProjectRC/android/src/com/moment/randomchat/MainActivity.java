@@ -86,6 +86,9 @@ public final class MainActivity extends Activity {
         super.onCreate(state);
         // 로컬 대화·사진 화면의 캡처와 최근 앱 미리보기를 OS에 억제 요청한다.
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
+        getWindow().setStatusBarColor(COLOR_BG);
+        getWindow().setNavigationBarColor(COLOR_BG);
+        getWindow().getDecorView().setSystemUiVisibility(0);
         token = getPreferences(MODE_PRIVATE).getString(PREF_TOKEN, "");
         File[] oldPreviews = getCacheDir().listFiles((dir, name) -> name.startsWith("moment-preview-") && name.endsWith(".mp4"));
         if (oldPreviews != null) for (File oldPreview : oldPreviews) oldPreview.delete();
