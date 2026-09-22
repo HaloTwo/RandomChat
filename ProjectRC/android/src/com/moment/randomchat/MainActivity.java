@@ -255,8 +255,7 @@ public final class MainActivity extends Activity {
             getPreferences(MODE_PRIVATE).edit().putString(PREF_TOKEN, token).apply();
             saveServerAddress();
             notice("계정을 만들었습니다. 매칭을 시작하세요.");
-            refresh();
-            runOnUiThread(() -> selectTab("lounge"));
+            runOnUiThread(this::recreate);
             });
         });
         } else {
@@ -372,6 +371,8 @@ public final class MainActivity extends Activity {
         return view;
     }
     private void selectTab(String tab) {
+        // 계정 생성 전에는 앱 기능 화면을 열지 않고 연결 설정으로 돌린다.
+        if (token.isEmpty() && !"profile".equals(tab)) tab = "profile";
         boolean lounge = "lounge".equals(tab);
         boolean chat = "chat".equals(tab);
         loungeSection.setVisibility(lounge ? View.VISIBLE : View.GONE);
