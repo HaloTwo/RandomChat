@@ -18,6 +18,8 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Spinner;
+import android.widget.ArrayAdapter;
 import android.widget.TextView;
 import android.widget.VideoView;
 import org.json.JSONArray;
@@ -50,6 +52,7 @@ public final class MainActivity extends Activity {
     private volatile String serverAddress = "http://192.168.0.2:3000";
     private volatile boolean foreground;
     private EditText serverInput, nicknameInput, messageInput, reportInput, storyInput, postInput;
+    private Spinner genderInput;
     private TextView statusView, pageTitle, pageSubtitle;
     private LinearLayout roomsView, messagesView, photosView, videosView, ownProfilePhotosView, peerProfilePhotosView, storiesView, postsView;
     private ImageView photoView;
@@ -106,8 +109,8 @@ public final class MainActivity extends Activity {
         navigation.setGravity(Gravity.CENTER);
         navigation.setPadding(0, dp(16), 0, dp(8));
         page.addView(navigation, new LinearLayout.LayoutParams(-1, -2));
-        loungeTab = tabButton(navigation, "라운지", () -> selectTab("lounge"));
-        chatTab = tabButton(navigation, "대화", () -> selectTab("chat"));
+        loungeTab = tabButton(navigation, "게시물", () -> selectTab("lounge"));
+        chatTab = tabButton(navigation, "접속자", () -> selectTab("chat"));
         profileTab = tabButton(navigation, "내 설정", () -> selectTab("profile"));
 
         loungeSection = section(page);
@@ -126,13 +129,17 @@ public final class MainActivity extends Activity {
         postsView = column(loungeSection);
 
         chatSection = section(page);
-        heading(chatSection, "랜덤 대화", 24);
+        heading(chatSection, "현재 접속자 · 랜덤 대화", 24);
         label(chatSection, "상대를 찾고, 이어서 대화할지 직접 결정하세요.");
-        button(chatSection, "랜덤 대화 찾기", () -> background(() -> {
-            JSONObject result = json("POST", "/api/queue", null);
-            notice(result.optBoolean("waiting") ? "상대를 기다리는 중입니다." : "매칭되었습니다.");
-            refresh();
-        }));
+        button(chatSection, "랜덤 대화 찾기", () -> new android.app.AlertDialog.Builder(this)
+            .setTitle("랜덤 대화 상대를 찾을까요?")
+            .setMessage("확인을 누르면 익명 상대를 찾습니다. 대화를 나가면 방이 종료됩니다.")
+            .setNegativeButton("취소", null)
+            .setPositiveButton("확인", (dialog, which) -> background(() -> {
+                JSONObject result = json("POST", "/api/queue", null);
+                notice(result.optBoolean("waiting") ? "상대를 기다리는 중입니다." : "매칭되었습니다.");
+                refresh();
+            })).show());
         button(chatSection, "목록 새로고침", this::refresh);
         heading(chatSection, "내 대화방", 20);
         roomsView = column(chatSection);
@@ -203,10 +210,16 @@ public final class MainActivity extends Activity {
             notice("서버 연결 성공. 이제 테스트 계정을 만드세요.");
         }));
         nicknameInput = input(profileSection, "테스트 닉네임", "Android 사용자");
+        genderInput = new Spinner(this);
+        ArrayAdapter<String> genderAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, new String[] { "성별 선택", "남성 · 연한 파랑", "여성 · 연한 분홍" });
+        genderInput.setAdapter(genderAdapter);
+        profileSection.addView(genderInput, new LinearLayout.LayoutParams(-1, dp(52)));
         button(profileSection, "테스트 계정 만들기", () -> {
             String nickname = nicknameInput.getText().toString().trim();
+            int selectedGender = genderInput.getSelectedItemPosition();
             background(() -> {
-            JSONObject body = new JSONObject().put("nickname", nickname).put("adultAttested", true);
+            if (selectedGender == 0) throw new IllegalArgumentException("성별을 한 번 선택하세요.");
+            JSONObject body = new JSONObject().put("nickname", nickname).put("gender", selectedGender == 1 ? "male" : "female").put("adultAttested", true);
             JSONObject user = new JSONObject(new String(requestRaw("POST", "/api/dev/users", body.toString().getBytes(StandardCharsets.UTF_8), "application/json", false), StandardCharsets.UTF_8));
             token = user.getString("token");
             saveServerAddress();
@@ -449,7 +462,7 @@ public final class MainActivity extends Activity {
                     JSONObject story = stories.optJSONObject(i);
                     if (story == null) continue;
                     String id = story.optString("id");
-                    label(storiesView, (story.optBoolean("mine") ? "나" : story.optString("author")) + " · " + story.optString("body"));
+                    label(storiesView, story.optString("anonymousLabel", "익명 사용자") + " · " + story.optString("body"));
                     if (story.optBoolean("hasImage")) button(storiesView, "스토리 사진 보기", () -> showPublicImage("/api/stories/" + id + "/image"));
                     if (story.optBoolean("mine")) button(storiesView, "내 스토리 삭제", () -> background(() -> { json("DELETE", "/api/stories/" + id, null); refresh(); }));
                 }
@@ -459,7 +472,7 @@ public final class MainActivity extends Activity {
                     JSONObject post = posts.optJSONObject(i);
                     if (post == null) continue;
                     String id = post.optString("id");
-                    label(postsView, (post.optBoolean("mine") ? "나" : post.optString("author")) + " · " + post.optString("body"));
+                    label(postsView, post.optString("anonymousLabel", "익명 사용자") + " · " + post.optString("body"));
                     if (post.optBoolean("hasImage")) button(postsView, "게시물 사진 보기", () -> showPublicImage("/api/posts/" + id + "/image"));
                     if (post.optBoolean("mine")) button(postsView, "내 게시물 삭제", () -> background(() -> { json("DELETE", "/api/posts/" + id, null); refresh(); }));
                 }

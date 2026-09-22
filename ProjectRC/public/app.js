@@ -16,6 +16,9 @@ let mediaUrls = [];
 let mediaLoading = false;
 let feed = [];
 let stories = [];
+let online = { count: 0, users: [] };
+let inbox = [];
+let activePostId = null;
 let socialUrls = [];
 let socialSignature = '';
 let socialGeneration = 0;
@@ -95,9 +98,11 @@ async function socialImage(path, alt) {
 
 async function refreshSocial() {
   if (!token) return;
-  const [feedResult, storyResult] = await Promise.all([api('/api/feed'), api('/api/stories')]);
+  const [feedResult, storyResult, onlineResult, inboxResult] = await Promise.all([api('/api/feed'), api('/api/stories'), api('/api/online'), api('/api/inbox')]);
   feed = feedResult.posts;
   stories = storyResult.stories;
+  online = onlineResult;
+  inbox = inboxResult.notes;
 }
 
 async function refresh() {
@@ -127,7 +132,6 @@ function render() {
   $('welcome').classList.toggle('hidden', loggedIn);
   $('dashboard').classList.toggle('hidden', !loggedIn);
   if (!loggedIn) return;
-  $('my-name').textContent = state.user.nickname;
   $('profile-name').textContent = state.user.nickname;
   $('profile-intro').textContent = state.user.intro || '소개가 비어 있습니다.';
   $('quota-left').textContent = state.quota.available;
@@ -141,6 +145,8 @@ function render() {
   renderRoomList();
   renderRoom();
   renderSocial();
+  renderOnline();
+  renderInbox();
 }
 
 function renderSocial() {
@@ -153,11 +159,11 @@ function renderSocial() {
   if (!stories.length) storyList.append(Object.assign(document.createElement('p'), { className: 'muted', textContent: '아직 올라온 스토리가 없습니다. 첫 이야기를 남겨 보세요.' }));
   for (const item of stories) {
     const card = document.createElement('article'); card.className = 'story-card';
-    const name = document.createElement('b'); name.textContent = item.mine ? '나' : item.author;
+    const name = document.createElement('b'); name.className = `gender-${item.gender || 'unknown'}`; name.textContent = item.anonymousLabel || '익명 사용자';
     const body = document.createElement('p'); body.textContent = item.body;
     const time = document.createElement('small'); time.textContent = `${formatTime(item.createdAt)} · 24시간 후 사라짐`;
     card.append(name, body);
-    if (item.hasImage) socialImage(`/api/stories/${item.id}/image`, `${item.author}의 스토리`).then(image => { if (image && card.isConnected) card.insertBefore(image, time); }).catch(error => flash(error.message));
+    if (item.hasImage) socialImage(`/api/stories/${item.id}/image`, '익명 스토리 사진').then(image => { if (image && card.isConnected) card.insertBefore(image, time); }).catch(error => flash(error.message));
     if (item.mine) { const remove = document.createElement('button'); remove.className = 'text-button danger'; remove.textContent = '삭제'; remove.addEventListener('click', () => act(`/api/stories/${item.id}`, 'DELETE')); card.append(remove); }
     card.append(time); storyList.append(card);
   }
@@ -167,13 +173,58 @@ function renderSocial() {
   for (const item of feed) {
     const card = document.createElement('article'); card.className = 'post-card';
     const meta = document.createElement('div'); meta.className = 'post-meta';
-    const name = document.createElement('b'); name.textContent = item.mine ? '나' : item.author;
+    const name = document.createElement('b'); name.className = `gender-${item.gender || 'unknown'}`; name.textContent = item.anonymousLabel || '익명 사용자';
     const time = document.createElement('small'); time.textContent = formatTime(item.createdAt); meta.append(name, time);
     const body = document.createElement('p'); body.textContent = item.body;
-    card.append(meta, body);
-    if (item.hasImage) socialImage(`/api/posts/${item.id}/image`, `${item.author}의 게시물 사진`).then(image => { if (image && card.isConnected) card.append(image); }).catch(error => flash(error.message));
+    const more = document.createElement('button');
+    more.type = 'button'; more.className = 'more-button'; more.textContent = '⋯'; more.setAttribute('aria-label', '게시물 메뉴');
+    more.addEventListener('click', () => openPostDialog(item.id));
+    meta.append(more); card.append(meta, body);
+    if (item.hasImage) socialImage(`/api/posts/${item.id}/image`, '익명 게시물 사진').then(image => { if (image && card.isConnected) card.append(image); }).catch(error => flash(error.message));
     if (item.mine) { const remove = document.createElement('button'); remove.className = 'text-button danger'; remove.textContent = '내 게시물 삭제'; remove.addEventListener('click', () => act(`/api/posts/${item.id}`, 'DELETE')); card.append(remove); }
     feedList.append(card);
+  }
+}
+
+function renderInbox() {
+  const list = $('inbox-list');
+  list.replaceChildren();
+  if (!inbox.length) { list.textContent = '받은 익명 쪽지가 없습니다.'; return; }
+  for (const note of inbox) {
+    const item = document.createElement('article'); item.className = 'inbox-note';
+    item.textContent = note.body;
+    const time = document.createElement('small'); time.textContent = formatTime(note.createdAt);
+    item.append(time); list.append(item);
+  }
+}
+
+async function openPostDialog(postId) {
+  activePostId = postId;
+  $('post-action-body').value = '';
+  $('post-comments').textContent = '댓글을 불러오는 중입니다.';
+  $('post-dialog').showModal();
+  try {
+    const result = await api(`/api/posts/${postId}/comments`);
+    const list = $('post-comments'); list.replaceChildren();
+    if (!result.comments.length) list.textContent = '첫 댓글을 남겨 보세요.';
+    for (const comment of result.comments) {
+      const row = document.createElement('p');
+      row.className = `gender-${comment.gender || 'unknown'}`;
+      row.textContent = `${comment.anonymousLabel || '익명 사용자'} · ${comment.body}`;
+      list.append(row);
+    }
+  } catch (error) { $('post-comments').textContent = error.message; }
+}
+
+function renderOnline() {
+  $('online-count').textContent = online.count || 0;
+  const list = $('online-list');
+  list.replaceChildren();
+  if (!online.users?.length) { list.textContent = '지금 표시할 접속자가 없습니다.'; return; }
+  for (const user of online.users) {
+    const item = document.createElement('span');
+    item.textContent = user.anonymousLabel || '익명 사용자';
+    list.append(item);
   }
 }
 
@@ -298,11 +349,24 @@ async function act(path, method = 'POST', body) {
 $('join-form').addEventListener('submit', async event => {
   event.preventDefault();
   try {
-    const user = await api('/api/dev/users', 'POST', { nickname: $('nickname').value, intro: $('intro').value, adultAttested: $('adult').checked });
+    const user = await api('/api/dev/users', 'POST', { nickname: $('nickname').value, gender: $('gender').value, intro: $('intro').value, adultAttested: $('adult').checked });
     token = user.token; sessionStorage.setItem(sessionKey, token); await refresh();
   } catch (error) { alert(error.message); }
 });
-$('match-btn').addEventListener('click', () => act('/api/queue'));
+$('match-btn').addEventListener('click', () => $('match-dialog').showModal());
+$('match-dialog-cancel').addEventListener('click', () => $('match-dialog').close());
+$('match-confirm').addEventListener('click', () => { $('match-dialog').close(); act('/api/queue'); });
+$('post-dialog-close').addEventListener('click', () => $('post-dialog').close());
+$('send-comment').addEventListener('click', async () => {
+  const body = $('post-action-body').value.trim(); if (!activePostId || !body) return;
+  try { await api(`/api/posts/${activePostId}/comments`, 'POST', { body }); $('post-action-body').value = ''; await openPostDialog(activePostId); flash('익명 댓글을 남겼습니다.'); }
+  catch (error) { flash(error.message); }
+});
+$('send-note').addEventListener('click', async () => {
+  const body = $('post-action-body').value.trim(); if (!activePostId || !body) return;
+  try { await api(`/api/posts/${activePostId}/message`, 'POST', { body }); $('post-action-body').value = ''; $('post-dialog').close(); flash('익명 쪽지를 보냈습니다.'); }
+  catch (error) { flash(error.message); }
+});
 $('cancel-btn').addEventListener('click', () => act('/api/queue', 'DELETE'));
 $('refresh-feed').addEventListener('click', async () => { try { await refreshSocial(); renderSocial(); } catch (error) { flash(error.message); } });
 $('post-form').addEventListener('submit', async event => {
@@ -382,6 +446,12 @@ $('report-form').addEventListener('submit', async event => { event.preventDefaul
 $('edit-profile').addEventListener('click', () => { $('edit-nickname').value = state.user.nickname; $('edit-intro').value = state.user.intro; $('profile-dialog').showModal(); });
 $('profile-cancel').addEventListener('click', () => $('profile-dialog').close());
 $('profile-form').addEventListener('submit', async event => { event.preventDefault(); try { await api('/api/profile', 'PATCH', { nickname: $('edit-nickname').value, intro: $('edit-intro').value }); $('profile-dialog').close(); await refresh(); } catch (error) { flash(error.message); } });
+
+document.querySelectorAll('.nav-item').forEach(button => button.addEventListener('click', () => {
+  const selected = button.dataset.tab;
+  document.querySelectorAll('.app-tab').forEach(tab => tab.classList.toggle('hidden', tab.id !== `tab-${selected}`));
+  document.querySelectorAll('.nav-item').forEach(item => item.classList.toggle('selected', item === button));
+}));
 
 render();
 refresh();

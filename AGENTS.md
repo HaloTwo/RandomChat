@@ -43,7 +43,6 @@ Windows 절대경로를 코드나 지침에 하드코딩하지 않는다.
 
 따라서 다음과 같은 잘못된 경로를 사용하지 않는다.
 
-- `ProjectRC/AGENTS.md`
 - `ProjectRC/opencode.jsonc`
 - `ProjectRC/StartRandomChat.bat`
 - `ProjectRC/knowledge/`
@@ -73,28 +72,21 @@ Windows 절대경로를 코드나 지침에 하드코딩하지 않는다.
 
 클라우드 모델을 사용하는 주 개발 환경이다.
 
-## Local AI
+## Local Codex fallback
 
 로컬 작업은 다음 환경을 사용한다.
 
 - Ollama
-- OpenCode
+- Codex CLI OSS 모드
 - 기본 로컬 모델: `ornith-1.5:9b`
 
 Local AI는 Codex 사용량이 부족하거나,
 오프라인 작업이 필요하거나,
 빠른 로컬 반복 작업이 필요한 경우 사용할 수 있다.
 
-로컬 AI 실행에 Codex CLI의 `--oss` 방식을 사용하지 않는다.
-
-로컬 AI 실행에 `opencode --model ...`을 사용하지 않는다.
-
-OpenCode의 기본 모델은 `opencode.jsonc`에서 관리한다.
-
-OpenCode에서 현재 세션에 다른 모델이 명시적으로 선택되어 있다면
-에이전트가 임의로 모델을 변경하지 않는다.
-
-에이전트는 스스로 Cloud/Local 실행 모드를 전환하지 않는다.
+`StartRandomChat.bat`의 Local 항목은 `codex --oss --local-provider ollama`로 실행한다.
+클라우드와 로컬은 같은 Git 작업 트리, 이 파일, `ProjectRC/AGENTS.md`, `ProjectRC/HANDOFF.md`를 사용한다.
+사용량 소진은 CLI 종료 코드만으로 신뢰성 있게 구분할 수 없으므로, Cloud가 끝나면 배치를 다시 열어 Local을 선택한다.
 
 
 # StartRandomChat 실행 구조
@@ -103,20 +95,14 @@ OpenCode에서 현재 세션에 다른 모델이 명시적으로 선택되어 �
 
 권장 메뉴 구조는 다음과 같다.
 
-- `[1] Codex`
-- `[2] Local AI - New`
-- `[3] Local AI - Continue`
-- `[4] Phone server`
+- 인자 없음: Local Codex (`ornith-1.5:9b`)
+- `StartRandomChat.bat cloud`: Codex Cloud
+- `StartRandomChat.bat server`: Phone server
 
-`Local AI - New`는 새 OpenCode 작업을 시작한다.
-
-`Local AI - Continue`는 가능한 경우
-`opencode --continue`로 마지막 OpenCode 세션을 이어간다.
-
-Local AI 실행 전에는 다음을 확인한다.
+Local 실행 전에는 다음을 확인한다.
 
 - Ollama 설치 여부
-- OpenCode 설치 여부
+- Codex CLI 설치 여부
 - `ornith-1.5:9b` 설치 여부
 
 모델이 없다면 임의로 다른 모델을 선택하지 않는다.

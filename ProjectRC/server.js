@@ -33,8 +33,8 @@ function createDatabase(dbPath) {
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE,
       nickname TEXT NOT NULL CHECK(length(nickname) BETWEEN 1 AND 24),
-      intro TEXT NOT NULL DEFAULT '', adult_attested INTEGER NOT NULL CHECK(adult_attested = 1),
-      created_at INTEGER NOT NULL, deleted_at INTEGER
+      intro TEXT NOT NULL DEFAULT '', gender TEXT CHECK(gender IN ('male','female')), adult_attested INTEGER NOT NULL CHECK(adult_attested = 1),
+      created_at INTEGER NOT NULL, last_seen INTEGER, deleted_at INTEGER
     );
     CREATE TABLE IF NOT EXISTS queue (
       user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -133,18 +133,29 @@ function createDatabase(dbPath) {
     );
     CREATE TABLE IF NOT EXISTS posts (
       id TEXT PRIMARY KEY, author_id TEXT NOT NULL REFERENCES users(id),
-      body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 500),
+      body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 500), anonymous_label TEXT NOT NULL DEFAULT '',
       image BLOB, image_width INTEGER, image_height INTEGER,
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS posts_feed ON posts(created_at DESC);
     CREATE TABLE IF NOT EXISTS stories (
       id TEXT PRIMARY KEY, author_id TEXT NOT NULL REFERENCES users(id),
-      body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 120),
+      body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 120), anonymous_label TEXT NOT NULL DEFAULT '',
       image BLOB, image_width INTEGER, image_height INTEGER,
       created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS stories_active ON stories(expires_at DESC, created_at DESC);
+    CREATE TABLE IF NOT EXISTS post_comments (
+      id TEXT PRIMARY KEY, post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+      author_id TEXT NOT NULL REFERENCES users(id), anonymous_label TEXT NOT NULL,
+      body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 300), created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS post_comments_post ON post_comments(post_id, created_at);
+    CREATE TABLE IF NOT EXISTS private_notes (
+      id TEXT PRIMARY KEY, sender_id TEXT NOT NULL REFERENCES users(id), receiver_id TEXT NOT NULL REFERENCES users(id),
+      body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 500), created_at INTEGER NOT NULL, read_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS private_notes_receiver ON private_notes(receiver_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS conversation_access_audit (
       id TEXT PRIMARY KEY, reviewer_id TEXT NOT NULL REFERENCES admin_accounts(id),
       room_id TEXT NOT NULL, created_at INTEGER NOT NULL
@@ -156,6 +167,17 @@ function createDatabase(dbPath) {
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS messages_client_id ON messages(room_id, sender_id, client_id)');
   const userColumns = db.prepare('PRAGMA table_info(users)').all();
   if (!userColumns.some(column => column.name === 'deleted_at')) db.exec('ALTER TABLE users ADD COLUMN deleted_at INTEGER');
+  if (!userColumns.some(column => column.name === 'last_seen')) db.exec('ALTER TABLE users ADD COLUMN last_seen INTEGER');
+  if (!userColumns.some(column => column.name === 'gender')) db.exec("ALTER TABLE users ADD COLUMN gender TEXT CHECK(gender IN ('male','female'))");
+  const postColumns = db.prepare('PRAGMA table_info(posts)').all();
+  if (!postColumns.some(column => column.name === 'anonymous_label')) db.exec("ALTER TABLE posts ADD COLUMN anonymous_label TEXT NOT NULL DEFAULT ''");
+  const storyColumns = db.prepare('PRAGMA table_info(stories)').all();
+  if (!storyColumns.some(column => column.name === 'anonymous_label')) db.exec("ALTER TABLE stories ADD COLUMN anonymous_label TEXT NOT NULL DEFAULT ''");
+  for (const table of ['posts', 'stories']) {
+    const rows = db.prepare(`SELECT id FROM ${table} WHERE anonymous_label = ''`).all();
+    const update = db.prepare(`UPDATE ${table} SET anonymous_label = ? WHERE id = ?`);
+    for (const row of rows) update.run(anonymousLabel(row.id), row.id);
+  }
   const photoColumns = db.prepare('PRAGMA table_info(photo_uploads)').all();
   if (!photoColumns.some(column => column.name === 'reviewer_id')) db.exec('ALTER TABLE photo_uploads ADD COLUMN reviewer_id TEXT REFERENCES admin_accounts(id)');
   db.exec('CREATE INDEX IF NOT EXISTS photo_uploads_reviewer ON photo_uploads(reviewer_id,status)');
@@ -165,6 +187,8 @@ function createDatabase(dbPath) {
 }
 
 const uuid = () => crypto.randomUUID();
+// 공개 라운지에는 계정 ID나 닉네임 대신 글마다 고정된 익명 번호만 보여 준다.
+const anonymousLabel = id => `익명 #${1000 + (parseInt(crypto.createHash('sha256').update(id).digest('hex').slice(0, 8), 16) % 9000)}`;
 const tokenHash = token => crypto.createHash('sha256').update(token).digest('hex');
 const kstDay = now => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
 const nextKstMidnight = now => (Math.floor((now + KST_OFFSET_MS) / DAY_MS) + 1) * DAY_MS - KST_OFFSET_MS;
@@ -306,8 +330,9 @@ function sendVideo(res, video) {
 function requireUser(db, req) {
   const token = /^Bearer (.+)$/.exec(req.headers.authorization || '')?.[1];
   if (!token) throw httpError(401, '로그인이 필요합니다.');
-  const user = db.prepare('SELECT id, nickname, intro FROM users WHERE token_hash = ? AND deleted_at IS NULL').get(tokenHash(token));
+  const user = db.prepare('SELECT id, nickname, intro, gender FROM users WHERE token_hash = ? AND deleted_at IS NULL').get(tokenHash(token));
   if (!user) throw httpError(401, '로그인이 만료되었습니다.');
+  db.prepare('UPDATE users SET last_seen = ? WHERE id = ?').run(Date.now(), user.id);
   return user;
 }
 
@@ -468,10 +493,12 @@ function createApp(options = {}) {
         const body = await readJson(req);
         const nickname = String(body.nickname || '').trim();
         const intro = String(body.intro || '').trim();
+        const gender = String(body.gender || '');
         if (!body.adultAttested) throw httpError(400, '성인 확인에 동의해야 합니다. 이 확인은 개발용 자기확인입니다.');
         if (nickname.length < 1 || nickname.length > 24 || intro.length > 300) throw httpError(400, '닉네임은 1~24자, 소개는 300자 이하로 입력하세요.');
+        if (!['male', 'female'].includes(gender)) throw httpError(400, '성별을 한 번 선택하세요.');
         const id = uuid(), token = crypto.randomBytes(32).toString('base64url');
-        db.prepare('INSERT INTO users(id,token_hash,nickname,intro,adult_attested,created_at) VALUES (?,?,?,?,1,?)').run(id, tokenHash(token), nickname, intro, Date.now());
+        db.prepare('INSERT INTO users(id,token_hash,nickname,intro,gender,adult_attested,created_at) VALUES (?,?,?,?,?,1,?)').run(id, tokenHash(token), nickname, intro, gender, Date.now());
         return send(res, 201, { id, token, nickname });
       }
       if (!pathname.startsWith('/api/')) throw httpError(404, '페이지를 찾을 수 없습니다.');
@@ -496,6 +523,31 @@ function createApp(options = {}) {
             ORDER BY m.created_at,m.rowid LIMIT 200 OFFSET ?`).all(room.id, Math.floor(offset));
           db.prepare('INSERT INTO conversation_access_audit VALUES (?,?,?,?)').run(uuid(),reviewer.id,room.id,Date.now());
           return send(res, 200, { room, messages });
+        }
+        // 관리자는 작성자 계정 식별자 없이도 공개 라운지 전체를 검색·열람할 수 있다.
+        if (pathname === '/api/admin/social' && req.method === 'GET') {
+          const query = String(url.searchParams.get('q') || '').trim().slice(0, 100);
+          const like = `%${query.replace(/[\\%_]/g, '\\$&')}%`;
+          const posts = db.prepare(`SELECT id,body,anonymous_label AS anonymousLabel,created_at AS createdAt,image IS NOT NULL AS hasImage
+            FROM posts WHERE ? = '' OR body LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT 100`).all(query, like);
+          const stories = db.prepare(`SELECT id,body,anonymous_label AS anonymousLabel,created_at AS createdAt,expires_at AS expiresAt,image IS NOT NULL AS hasImage
+            FROM stories WHERE ? = '' OR body LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT 100`).all(query, like);
+          return send(res, 200, { posts: posts.map(item => ({ ...item, hasImage: !!item.hasImage })), stories: stories.map(item => ({ ...item, hasImage: !!item.hasImage })) });
+        }
+        if (pathname === '/api/admin/search' && req.method === 'GET') {
+          const query = String(url.searchParams.get('q') || '').trim().slice(0, 100);
+          if (!query) throw httpError(400, '검색어를 입력하세요.');
+          const like = `%${query.replace(/[\\%_]/g, '\\$&')}%`;
+          const messages = db.prepare(`SELECT m.room_id AS roomId,m.body,m.created_at AS createdAt FROM messages m WHERE m.body LIKE ? ESCAPE '\\' ORDER BY m.created_at DESC LIMIT 100`).all(like);
+          const comments = db.prepare(`SELECT c.post_id AS postId,c.body,c.created_at AS createdAt FROM post_comments c WHERE c.body LIKE ? ESCAPE '\\' ORDER BY c.created_at DESC LIMIT 100`).all(like);
+          return send(res, 200, { messages, comments });
+        }
+        const adminSocialImage = /^\/api\/admin\/(posts|stories)\/([^/]+)\/image$/.exec(pathname);
+        if (adminSocialImage && req.method === 'GET') {
+          const table = adminSocialImage[1];
+          const row = db.prepare(`SELECT image FROM ${table} WHERE id = ?`).get(adminSocialImage[2]);
+          if (!row?.image) throw httpError(404, '공개 사진을 찾을 수 없습니다.');
+          return sendPhoto(res, row.image);
         }
         if (pathname === '/api/admin/videos' && req.method === 'GET') {
           const videos = db.prepare(`SELECT v.id,v.status,v.width,v.height,v.duration,v.created_at AS createdAt
@@ -657,21 +709,47 @@ function createApp(options = {}) {
         return send(res, 200, { deleted: true });
       }
       // 공개 피드와 스토리는 로그인한 로컬 테스트 사용자끼리만 본다. 랜덤 대화방 미디어와는 저장·권한을 분리한다.
-      if (pathname === '/api/posts' && req.method === 'GET') {
-        const posts = db.prepare(`SELECT p.id,p.body,p.created_at AS createdAt,p.image IS NOT NULL AS hasImage
-          FROM posts p
-          ORDER BY p.created_at DESC LIMIT 40`).all();
-        return send(res, 200, { posts: posts.map(p => ({ ...p, hasImage: !!p.hasImage })) });
+      if ((pathname === '/api/posts' || pathname === '/api/feed') && req.method === 'GET') {
+        const posts = db.prepare(`SELECT p.id,p.body,p.anonymous_label AS anonymousLabel,u.gender,p.created_at AS createdAt,p.image IS NOT NULL AS hasImage,
+          p.author_id = ? AS mine
+          FROM posts p JOIN users u ON u.id = p.author_id AND u.deleted_at IS NULL
+          ORDER BY p.created_at DESC LIMIT 40`).all(user.id);
+        return send(res, 200, { posts: posts.map(p => ({ ...p, mine: !!p.mine, hasImage: !!p.hasImage })) });
       }
 
       if (pathname === '/api/posts' && req.method === 'POST') {
         const body = String((await readJson(req)).body || '').trim();
         if (!body || body.length > 500) throw httpError(400, '게시물은 1~500자로 입력하세요.');
         const id = uuid();
-        db.prepare('INSERT INTO posts(id,author_id,body,created_at) VALUES (?,?,?,?)').run(id, user.id, body, now);
+        db.prepare('INSERT INTO posts(id,author_id,body,anonymous_label,created_at) VALUES (?,?,?,?,?)').run(id, user.id, body, anonymousLabel(id), now);
         return send(res, 201, { id });
       }
       const postRoute = /^\/api\/posts\/([^/]+)(?:\/(image))?$/.exec(pathname);
+      const postCommentsRoute = /^\/api\/posts\/([^/]+)\/comments$/.exec(pathname);
+      if (postCommentsRoute && req.method === 'GET') {
+        const comments = db.prepare(`SELECT c.id,c.body,c.anonymous_label AS anonymousLabel,u.gender,c.created_at AS createdAt,c.author_id = ? AS mine
+          FROM post_comments c JOIN users u ON u.id = c.author_id AND u.deleted_at IS NULL WHERE c.post_id = ? ORDER BY c.created_at ASC LIMIT 100`).all(user.id, postCommentsRoute[1]);
+        return send(res, 200, { comments: comments.map(comment => ({ ...comment, mine: !!comment.mine })) });
+      }
+      if (postCommentsRoute && req.method === 'POST') {
+        const body = String((await readJson(req)).body || '').trim();
+        if (!body || body.length > 300) throw httpError(400, '댓글은 1~300자로 입력하세요.');
+        const post = db.prepare('SELECT id FROM posts WHERE id = ?').get(postCommentsRoute[1]);
+        if (!post) throw httpError(404, '게시물을 찾을 수 없습니다.');
+        const id = uuid();
+        db.prepare('INSERT INTO post_comments(id,post_id,author_id,anonymous_label,body,created_at) VALUES (?,?,?,?,?,?)').run(id, post.id, user.id, anonymousLabel(id), body, now);
+        return send(res, 201, { id });
+      }
+      const postMessageRoute = /^\/api\/posts\/([^/]+)\/message$/.exec(pathname);
+      if (postMessageRoute && req.method === 'POST') {
+        const body = String((await readJson(req)).body || '').trim();
+        if (!body || body.length > 500) throw httpError(400, '쪽지는 1~500자로 입력하세요.');
+        const post = db.prepare('SELECT author_id FROM posts WHERE id = ?').get(postMessageRoute[1]);
+        if (!post) throw httpError(404, '게시물을 찾을 수 없습니다.');
+        if (post.author_id === user.id) throw httpError(400, '내 게시물에는 쪽지를 보낼 수 없습니다.');
+        db.prepare('INSERT INTO private_notes(id,sender_id,receiver_id,body,created_at) VALUES (?,?,?,?,?)').run(uuid(), user.id, post.author_id, body, now);
+        return send(res, 201, { sent: true });
+      }
       if (postRoute && postRoute[2] === 'image' && req.method === 'POST') {
         const declaredType = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
         const original = await readBytes(req, MAX_PHOTO_UPLOAD);
@@ -693,8 +771,8 @@ function createApp(options = {}) {
       }
       if (pathname === '/api/stories' && req.method === 'GET') {
         db.prepare('DELETE FROM stories WHERE expires_at <= ?').run(now);
-        const stories = db.prepare(`SELECT s.id,s.body,s.created_at AS createdAt,s.expires_at AS expiresAt,s.image IS NOT NULL AS hasImage,
-          s.author_id = ? AS mine,u.nickname AS author
+        const stories = db.prepare(`SELECT s.id,s.body,s.anonymous_label AS anonymousLabel,u.gender,s.created_at AS createdAt,s.expires_at AS expiresAt,s.image IS NOT NULL AS hasImage,
+          s.author_id = ? AS mine
           FROM stories s JOIN users u ON u.id = s.author_id AND u.deleted_at IS NULL
           WHERE s.expires_at > ? ORDER BY s.created_at DESC LIMIT 30`).all(user.id, now);
         return send(res, 200, { stories: stories.map(s => ({ ...s, mine: !!s.mine, hasImage: !!s.hasImage })) });
@@ -703,7 +781,7 @@ function createApp(options = {}) {
         const body = String((await readJson(req)).body || '').trim();
         if (!body || body.length > 120) throw httpError(400, '스토리는 1~120자로 입력하세요.');
         const id = uuid();
-        db.prepare('INSERT INTO stories(id,author_id,body,created_at,expires_at) VALUES (?,?,?,?,?)').run(id, user.id, body, now, now + DAY_MS);
+        db.prepare('INSERT INTO stories(id,author_id,body,anonymous_label,created_at,expires_at) VALUES (?,?,?,?,?,?)').run(id, user.id, body, anonymousLabel(id), now, now + DAY_MS);
         return send(res, 201, { id, expiresAt: now + DAY_MS });
       }
       const storyRoute = /^\/api\/stories\/([^/]+)(?:\/(image))?$/.exec(pathname);
@@ -757,6 +835,17 @@ function createApp(options = {}) {
         if (nickname.length < 1 || nickname.length > 24 || intro.length > 300) throw httpError(400, '닉네임은 1~24자, 소개는 300자 이하로 입력하세요.');
         db.prepare('UPDATE users SET nickname = ?, intro = ? WHERE id = ?').run(nickname, intro, user.id);
         return send(res, 200, { nickname, intro });
+      }
+      if (pathname === '/api/online' && req.method === 'GET') {
+        const since = now - 90 * 1000;
+        const users = db.prepare('SELECT id FROM users WHERE deleted_at IS NULL AND last_seen >= ? ORDER BY last_seen DESC LIMIT 50').all(since)
+          .map(row => ({ anonymousLabel: anonymousLabel(row.id) }));
+        return send(res, 200, { count: users.length, users });
+      }
+      if (pathname === '/api/inbox' && req.method === 'GET') {
+        const notes = db.prepare('SELECT id,body,created_at AS createdAt,read_at IS NOT NULL AS read FROM private_notes WHERE receiver_id = ? ORDER BY created_at DESC LIMIT 100').all(user.id);
+        db.prepare('UPDATE private_notes SET read_at = ? WHERE receiver_id = ? AND read_at IS NULL').run(now, user.id);
+        return send(res, 200, { notes: notes.map(note => ({ ...note, read: !!note.read })) });
       }
       if (pathname === '/api/state' && req.method === 'GET') {
         expireRequests(db, now);

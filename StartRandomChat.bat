@@ -1,6 +1,6 @@
 @echo off
 @setlocal EnableExtensions
-@cd /d "%~dp0"
+@cd /d "%~dp0ProjectRC"
 @cls
 
 @echo.
@@ -10,14 +10,20 @@
 @echo.
 @echo   Folder : %CD%
 @echo.
-@echo   [1] Codex Cloud
-@echo   [2] Local Qwen 3.5 9B
+@echo   Local model : ornith-1.5:9b
+@echo   Run now     : Local Codex
+@echo.
+@echo   Optional: StartRandomChat.bat cloud
+@echo   Optional: StartRandomChat.bat server
 @echo.
 
-@set /p "MODE=Choose 1 or 2: "
+@set "MODE=2"
+@if /i "%~1"=="cloud" set "MODE=1"
+@if /i "%~1"=="server" set "MODE=3"
 
 @if "%MODE%"=="1" goto cloud
 @if "%MODE%"=="2" goto local
+@if "%MODE%"=="3" goto phone
 
 @echo.
 @echo [ERROR] Invalid choice: %MODE%
@@ -80,7 +86,7 @@
     @exit /b 1
 )
 
-@set "LOCAL_MODEL=qwen3.5:9b"
+@set "LOCAL_MODEL=ornith-1.5:9b"
 
 @ollama list 2>nul | findstr /i /c:"%LOCAL_MODEL%" >nul
 @if errorlevel 1 (
@@ -119,3 +125,13 @@
 @echo.
 @pause
 @exit /b %CODEX_EXIT%
+
+:phone
+@cls
+@echo.
+@echo ========================================
+@echo          Phone server
+@echo ========================================
+@echo.
+@call ..\start-phone.cmd
+@exit /b %ERRORLEVEL%

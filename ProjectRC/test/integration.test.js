@@ -23,7 +23,7 @@ async function withApp(run, options = {}) {
     return { status: response.status, data: await response.json() };
   }
   async function user(nickname) {
-    const result = await call('/api/dev/users', 'POST', { nickname, intro: `${nickname}의 비공개 소개`, adultAttested: true });
+    const result = await call('/api/dev/users', 'POST', { nickname, gender: 'female', intro: `${nickname}의 비공개 소개`, adultAttested: true });
     assert.equal(result.status, 201);
     return result.data;
   }
@@ -62,6 +62,21 @@ test('라운지 플래그는 Android가 읽을 수 있는 boolean이다', async 
   const story = (await call('/api/stories', 'GET', null, a.token)).data.stories[0];
   assert.equal(story.mine, true);
   assert.equal(story.hasImage, false);
+}));
+
+test('공개 라운지는 익명 번호·성별만 보여 주고 댓글과 쪽지를 전달한다', async () => withApp(async ({ call, user }) => {
+  const author = await user('실명노출금지');
+  const reader = await user('댓글작성자');
+  const post = (await call('/api/posts', 'POST', { body: '익명 글' }, author.token)).data;
+  const feed = (await call('/api/feed', 'GET', null, reader.token)).data.posts[0];
+  assert.match(feed.anonymousLabel, /^익명 #\d{4}$/);
+  assert.equal(feed.gender, 'female');
+  assert.equal(JSON.stringify(feed).includes('실명노출금지'), false);
+  assert.equal((await call(`/api/posts/${post.id}/comments`, 'POST', { body: '익명 댓글' }, reader.token)).status, 201);
+  assert.equal((await call(`/api/posts/${post.id}/comments`, 'GET', null, author.token)).data.comments[0].body, '익명 댓글');
+  assert.equal((await call(`/api/posts/${post.id}/message`, 'POST', { body: '익명 쪽지' }, reader.token)).status, 201);
+  assert.equal((await call('/api/inbox', 'GET', null, author.token)).data.notes[0].body, '익명 쪽지');
+  assert.equal((await call('/api/online', 'GET', null, reader.token)).data.count >= 2, true);
 }));
 
 test('관리자 대화 조회는 토큰 권한·페이지·열람 기록을 검증한다', async () => withApp(async ({ app, call, user }) => {
