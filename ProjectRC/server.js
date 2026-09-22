@@ -145,6 +145,11 @@ function createDatabase(dbPath) {
       created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS stories_active ON stories(expires_at DESC, created_at DESC);
+    CREATE TABLE IF NOT EXISTS story_views (
+      story_id TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+      viewer_id TEXT NOT NULL REFERENCES users(id), viewed_at INTEGER NOT NULL,
+      PRIMARY KEY(story_id, viewer_id)
+    );
     CREATE TABLE IF NOT EXISTS post_comments (
       id TEXT PRIMARY KEY, post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
       author_id TEXT NOT NULL REFERENCES users(id), anonymous_label TEXT NOT NULL,
@@ -815,6 +820,14 @@ function createApp(options = {}) {
         return send(res, 201, { id, expiresAt: now + DAY_MS });
       }
       const storyRoute = /^\/api\/stories\/([^/]+)(?:\/(image))?$/.exec(pathname);
+      const storyViewRoute = /^\/api\/stories\/([^/]+)\/view$/.exec(pathname);
+      if (storyViewRoute && req.method === 'POST') {
+        const story = db.prepare('SELECT author_id FROM stories WHERE id = ? AND expires_at > ? AND image IS NOT NULL').get(storyViewRoute[1], now);
+        if (!story) throw httpError(404, '스토리를 찾을 수 없습니다.');
+        if (story.author_id !== user.id) db.prepare('INSERT INTO story_views(story_id,viewer_id,viewed_at) VALUES (?,?,?) ON CONFLICT(story_id,viewer_id) DO NOTHING').run(storyViewRoute[1], user.id, now);
+        const viewCount = db.prepare('SELECT count(*) AS n FROM story_views WHERE story_id = ?').get(storyViewRoute[1]).n;
+        return send(res, 200, { recorded: story.author_id !== user.id, viewCount, viewerDetailsAvailable: false });
+      }
       if (storyRoute && storyRoute[2] === 'image' && req.method === 'POST') {
         const declaredType = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
         const original = await readBytes(req, MAX_PHOTO_UPLOAD);
@@ -854,6 +867,12 @@ function createApp(options = {}) {
         return send(res, 200, { photos });
       }
       const ownProfilePhoto = /^\/api\/profile\/photos\/([^/]+)$/.exec(pathname);
+      const ownProfileImage = /^\/api\/profile\/photos\/([^/]+)\/image$/.exec(pathname);
+      if (ownProfileImage && req.method === 'GET') {
+        const photo = db.prepare('SELECT image FROM profile_photos WHERE id = ? AND owner_id = ?').get(ownProfileImage[1], user.id);
+        if (!photo?.image) throw httpError(404, '소개 이미지를 찾을 수 없습니다.');
+        return sendPhoto(res, photo.image);
+      }
       if (ownProfilePhoto && req.method === 'DELETE') {
         const result = db.prepare('DELETE FROM profile_photos WHERE id = ? AND owner_id = ?').run(ownProfilePhoto[1], user.id);
         if (result.changes !== 1) throw httpError(404, '프로필 사진을 찾을 수 없습니다.');

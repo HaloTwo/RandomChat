@@ -80,6 +80,18 @@ test('공개 라운지는 익명 번호·성별만 보여 주고 댓글과 쪽�
   assert.equal((await call('/api/online', 'GET', null, reader.token)).data.count >= 2, true);
 }));
 
+test('스토리는 사진이 있어야 공개되고 상세 열람만 조회 기록으로 남긴다', async () => withApp(async ({ app, call, user }) => {
+  const author = await user('스토리작성자'), reader = await user('스토리독자');
+  const created = await call('/api/stories', 'POST', { body: '사진 스토리' }, author.token);
+  assert.equal((await call('/api/stories', 'GET', null, reader.token)).data.stories.length, 0);
+  app.db.prepare('UPDATE stories SET image = ? WHERE id = ?').run(Buffer.from('fixture'), created.data.id);
+  assert.equal((await call('/api/stories', 'GET', null, reader.token)).data.stories.length, 1);
+  const viewed = await call(`/api/stories/${created.data.id}/view`, 'POST', null, reader.token);
+  assert.equal(viewed.data.recorded, true);
+  assert.equal(viewed.data.viewCount, 1);
+  assert.equal(viewed.data.viewerDetailsAvailable, false);
+}));
+
 test('관리자 대화 조회는 토큰 권한·페이지·열람 기록을 검증한다', async () => withApp(async ({ app, call, user }) => {
   const a = await user('A'), b = await user('B');
   await call('/api/queue', 'POST', null, a.token);

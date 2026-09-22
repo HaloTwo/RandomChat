@@ -18,6 +18,7 @@ let feed = [];
 let stories = [];
 let online = { count: 0, users: [] };
 let inbox = [];
+let ownProfilePhotos = [];
 let activePostId = null;
 let activeStory = null;
 let socialUrls = [];
@@ -99,10 +100,11 @@ async function socialImage(path, alt) {
 
 async function refreshSocial() {
   if (!token) return;
-  const [feedResult, storyResult, inboxResult] = await Promise.all([api('/api/feed'), api('/api/stories'), api('/api/inbox')]);
+  const [feedResult, storyResult, inboxResult, profileResult] = await Promise.all([api('/api/feed'), api('/api/stories'), api('/api/inbox'), api('/api/profile/photos')]);
   feed = feedResult.posts;
   stories = storyResult.stories;
   inbox = inboxResult.notes;
+  ownProfilePhotos = profileResult.photos;
 }
 
 async function refresh() {
@@ -134,6 +136,9 @@ function render() {
   if (!loggedIn) return;
   $('profile-name').textContent = state.user.nickname;
   $('profile-intro').textContent = state.user.intro || '소개가 비어 있습니다.';
+  const approvedProfile = ownProfilePhotos.find(photo => photo.status === 'approved');
+  $('my-profile-image').classList.toggle('hidden', !approvedProfile);
+  if (approvedProfile) $('my-profile-image').src = `/api/profile/photos/${approvedProfile.id}/image`;
   $('quota-left').textContent = state.quota.available;
   $('quota-bar').style.width = `${state.quota.available * 50}%`;
   $('quota-detail').textContent = `사용 ${state.quota.used}건 · 요청 대기 ${state.quota.reserved}건 · 기준일 ${state.quota.day} (KST)`;
@@ -179,9 +184,9 @@ function renderSocial() {
     const body = document.createElement('p'); body.className = 'post-preview'; body.textContent = item.body;
     const more = document.createElement('button');
     more.type = 'button'; more.className = 'more-button'; more.textContent = '⋯'; more.setAttribute('aria-label', '게시물 메뉴');
-    more.addEventListener('click', () => openPostDialog(item.id));
+    more.addEventListener('click', () => openPostDialog(item));
     meta.append(more); card.append(meta, title, body);
-    card.addEventListener('click', event => { if (!event.target.closest('button')) openPostDialog(item.id); });
+    card.addEventListener('click', event => { if (!event.target.closest('button')) openPostDialog(item); });
     if (item.hasImage) socialImage(`/api/posts/${item.id}/image`, '익명 게시물 사진').then(image => { if (image && card.isConnected) card.append(image); }).catch(error => flash(error.message));
     if (item.mine) { const remove = document.createElement('button'); remove.className = 'text-button danger'; remove.textContent = '내 게시물 삭제'; remove.addEventListener('click', () => act(`/api/posts/${item.id}`, 'DELETE')); card.append(remove); }
     feedList.append(card);
@@ -200,13 +205,22 @@ function renderInbox() {
   }
 }
 
-async function openPostDialog(postId) {
-  activePostId = postId;
+async function openPostDialog(post) {
+  activePostId = post.id;
+  $('post-dialog-title').textContent = post.title || '익명 이야기';
+  $('post-dialog-body').textContent = post.body;
+  $('post-dialog-image').classList.toggle('hidden', !post.hasImage);
+  if (post.hasImage) {
+    try {
+      const image = await socialImage(`/api/posts/${post.id}/image`, '게시물 사진');
+      if (image) $('post-dialog-image').src = image.src;
+    } catch (error) { flash(error.message); }
+  }
   $('post-action-body').value = '';
   $('post-comments').textContent = '댓글을 불러오는 중입니다.';
   $('post-dialog').showModal();
   try {
-    const result = await api(`/api/posts/${postId}/comments`);
+    const result = await api(`/api/posts/${post.id}/comments`);
     const list = $('post-comments'); list.replaceChildren();
     if (!result.comments.length) list.textContent = '첫 댓글을 남겨 보세요.';
     for (const comment of result.comments) {
@@ -224,6 +238,8 @@ async function openStory(item) {
   $('story-dialog-body').textContent = item.body;
   $('story-actions').classList.add('hidden');
   $('story-dialog').showModal();
+  // 목록 썸네일 조회와 실제 스토리 열람을 구분해 유료 조회 기능용 기록만 남긴다.
+  api(`/api/stories/${item.id}/view`, 'POST').catch(() => {});
   try {
     const image = await socialImage(`/api/stories/${item.id}/image`, '스토리 사진');
     if (activeStory?.id === item.id && image) $('story-dialog-image').src = image.src;
@@ -380,7 +396,7 @@ $('story-report').addEventListener('click', async () => {
 $('post-dialog-close').addEventListener('click', () => $('post-dialog').close());
 $('send-comment').addEventListener('click', async () => {
   const body = $('post-action-body').value.trim(); if (!activePostId || !body) return;
-  try { await api(`/api/posts/${activePostId}/comments`, 'POST', { body }); $('post-action-body').value = ''; await openPostDialog(activePostId); flash('익명 댓글을 남겼습니다.'); }
+  try { await api(`/api/posts/${activePostId}/comments`, 'POST', { body }); $('post-action-body').value = ''; const post = feed.find(item => item.id === activePostId); if (post) await openPostDialog(post); flash('익명 댓글을 남겼습니다.'); }
   catch (error) { flash(error.message); }
 });
 $('send-note').addEventListener('click', async () => {
@@ -467,6 +483,12 @@ $('report-form').addEventListener('submit', async event => { event.preventDefaul
 $('edit-profile').addEventListener('click', () => { $('edit-nickname').value = state.user.nickname; $('edit-intro').value = state.user.intro; $('profile-dialog').showModal(); });
 $('profile-cancel').addEventListener('click', () => $('profile-dialog').close());
 $('profile-form').addEventListener('submit', async event => { event.preventDefault(); try { await api('/api/profile', 'PATCH', { nickname: $('edit-nickname').value, intro: $('edit-intro').value }); $('profile-dialog').close(); await refresh(); } catch (error) { flash(error.message); } });
+$('upload-profile-photo').addEventListener('click', async () => {
+  const file = $('profile-photo-input').files[0];
+  if (!file) { flash('소개 이미지를 선택하세요.'); return; }
+  try { await uploadPhoto('/api/profile/photos', file); $('profile-photo-input').value = ''; flash('소개 이미지를 등록했습니다. 담당자 승인 뒤 대화 상대에게 보입니다.'); }
+  catch (error) { flash(error.message); }
+});
 $('theme-toggle').addEventListener('click', () => {
   document.body.classList.toggle('dark');
   const dark = document.body.classList.contains('dark');
