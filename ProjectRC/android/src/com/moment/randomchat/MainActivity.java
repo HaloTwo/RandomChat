@@ -1099,6 +1099,7 @@ public final class MainActivity extends Activity {
         });
     }
     @Override protected void onDestroy() {
+        storyHandler.removeCallbacksAndMessages(null);
         photoView.setImageDrawable(null);
         stopVideo();
         worker.shutdownNow();
@@ -1106,6 +1107,8 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onStop() {
         foreground = false;
+        // 백그라운드에서는 스토리를 넘기거나 다음 다이얼로그를 열지 않는다.
+        storyHandler.removeCallbacksAndMessages(null);
         photoView.setImageDrawable(null);
         stopVideo();
         super.onStop();
