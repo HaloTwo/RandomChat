@@ -73,8 +73,12 @@ test('공개 라운지는 익명 번호·성별만 보여 주고 댓글과 쪽�
   assert.match(feed.anonymousLabel, /^익명 #\d{4}$/);
   assert.equal(feed.gender, 'female');
   assert.equal(JSON.stringify(feed).includes('실명노출금지'), false);
-  assert.equal((await call(`/api/posts/${post.id}/comments`, 'POST', { body: '익명 댓글' }, reader.token)).status, 201);
+  const comment = await call(`/api/posts/${post.id}/comments`, 'POST', { body: '익명 댓글' }, reader.token);
+  assert.equal(comment.status, 201);
   assert.equal((await call(`/api/posts/${post.id}/comments`, 'GET', null, author.token)).data.comments[0].body, '익명 댓글');
+  assert.equal((await call(`/api/comments/${comment.data.id}/replies`, 'POST', { body: '댓글 답글' }, author.token)).status, 201);
+  assert.equal((await call(`/api/comments/${comment.data.id}/replies`, 'GET', null, reader.token)).data.replies[0].body, '댓글 답글');
+  assert.equal((await call(`/api/posts/${post.id}/comments`, 'GET', null, author.token)).data.comments[0].replyCount, 1);
   assert.equal((await call(`/api/posts/${post.id}/message`, 'POST', { body: '익명 쪽지' }, reader.token)).status, 201);
   assert.equal((await call('/api/inbox', 'GET', null, author.token)).data.notes[0].body, '익명 쪽지');
   assert.equal((await call('/api/online', 'GET', null, reader.token)).data.count >= 2, true);
@@ -89,7 +93,13 @@ test('스토리는 사진이 있어야 공개되고 상세 열람만 조회 기�
   const viewed = await call(`/api/stories/${created.data.id}/view`, 'POST', null, reader.token);
   assert.equal(viewed.data.recorded, true);
   assert.equal(viewed.data.viewCount, 1);
-  assert.equal(viewed.data.viewerDetailsAvailable, false);
+  const viewedAgain = await call(`/api/stories/${created.data.id}/view`, 'POST', null, reader.token);
+  assert.equal(viewedAgain.data.viewCount, 2);
+  assert.equal(viewedAgain.data.viewerCount, 1);
+  const viewers = await call(`/api/stories/${created.data.id}/viewers`, 'GET', null, author.token);
+  assert.equal(viewers.data.viewCount, 2);
+  assert.equal(viewers.data.viewerCount, 1);
+  assert.equal(viewers.data.viewers[0].viewCount, 2);
 }));
 
 test('게시물 조회·댓글 수와 대화 읽음·입력 상태를 전달한다', async () => withApp(async ({ call, user }) => {

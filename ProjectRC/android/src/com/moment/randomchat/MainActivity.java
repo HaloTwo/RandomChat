@@ -16,6 +16,7 @@ import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
@@ -46,12 +47,13 @@ public final class MainActivity extends Activity {
     private static final int MAX_VIDEO_UPLOAD = 20 * 1024 * 1024;
     private static final int MAX_VIDEO_DOWNLOAD = 8 * 1024 * 1024;
     private static final String PREF_SERVER_ADDRESS = "serverAddress";
+    private static final String PREF_TOKEN = "sessionToken";
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private volatile String token = "";
     private volatile String roomId = "";
     private volatile String serverAddress = "http://192.168.0.2:3000";
     private volatile boolean foreground;
-    private EditText serverInput, nicknameInput, messageInput, reportInput, storyInput, postInput;
+    private EditText serverInput, nicknameInput, messageInput, reportInput, storyInput, postTitleInput, postInput;
     private Spinner genderInput;
     private TextView statusView, pageTitle, pageSubtitle;
     private LinearLayout roomsView, messagesView, photosView, videosView, ownProfilePhotosView, peerProfilePhotosView, storiesView, postsView;
@@ -60,11 +62,19 @@ public final class MainActivity extends Activity {
     private File videoFile;
     private String pendingSocialKind = "";
     private String pendingSocialBody = "";
+    private String pendingSocialTitle = "";
     private String pendingSocialId = "";
     private String pendingSocialToken = "";
     private LinearLayout loungeSection, chatSection, profileSection;
     private Button loungeTab, chatTab, profileTab;
     private volatile long lastTypingAt;
+    private static final int COLOR_BG = Color.rgb(23, 23, 29);
+    private static final int COLOR_PANEL = Color.rgb(36, 36, 45);
+    private static final int COLOR_FIELD = Color.rgb(48, 48, 58);
+    private static final int COLOR_TEXT = Color.rgb(245, 244, 247);
+    private static final int COLOR_MUTED = Color.rgb(174, 171, 182);
+    private static final int COLOR_BLUE = Color.rgb(96, 216, 255);
+    private static final int COLOR_PINK = Color.rgb(255, 154, 193);
 
     private interface Work { void run() throws Exception; }
 
@@ -72,11 +82,12 @@ public final class MainActivity extends Activity {
         super.onCreate(state);
         // 로컬 대화·사진 화면의 캡처와 최근 앱 미리보기를 OS에 억제 요청한다.
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
+        token = getPreferences(MODE_PRIVATE).getString(PREF_TOKEN, "");
         File[] oldPreviews = getCacheDir().listFiles((dir, name) -> name.startsWith("moment-preview-") && name.endsWith(".mp4"));
         if (oldPreviews != null) for (File oldPreview : oldPreviews) oldPreview.delete();
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(Color.rgb(244, 247, 243));
+        scroll.setBackgroundColor(COLOR_BG);
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(16);
@@ -91,18 +102,18 @@ public final class MainActivity extends Activity {
         pageTitle.setTypeface(null, Typeface.BOLD);
         hero.addView(pageTitle);
         pageSubtitle = new TextView(this);
-        pageSubtitle.setText("가벼운 이야기, 편안한 대화");
-        pageSubtitle.setTextColor(Color.rgb(215, 237, 223));
+        pageSubtitle.setText("익명으로 남기고, 대화로 연결돼요");
+        pageSubtitle.setTextColor(COLOR_MUTED);
         pageSubtitle.setTextSize(16);
         pageSubtitle.setPadding(0, dp(4), 0, dp(14));
         hero.addView(pageSubtitle);
         statusView = new TextView(this);
         statusView.setText("서버와 연결 전");
-        statusView.setTextColor(Color.rgb(23, 61, 48));
+        statusView.setTextColor(COLOR_BG);
         statusView.setTextSize(14);
         statusView.setTypeface(null, Typeface.BOLD);
         statusView.setPadding(dp(12), dp(8), dp(12), dp(8));
-        statusView.setBackground(round(Color.rgb(218, 241, 224), 14));
+        statusView.setBackground(round(COLOR_BLUE, 14));
         hero.addView(statusView);
 
         LinearLayout navigation = new LinearLayout(this);
@@ -111,27 +122,28 @@ public final class MainActivity extends Activity {
         navigation.setPadding(0, dp(16), 0, dp(8));
         page.addView(navigation, new LinearLayout.LayoutParams(-1, -2));
         loungeTab = tabButton(navigation, "게시물", () -> selectTab("lounge"));
-        chatTab = tabButton(navigation, "접속자", () -> selectTab("chat"));
-        profileTab = tabButton(navigation, "내 설정", () -> selectTab("profile"));
+        chatTab = tabButton(navigation, "내 대화", () -> selectTab("chat"));
+        profileTab = tabButton(navigation, "내 활동", () -> selectTab("profile"));
 
         loungeSection = section(page);
-        heading(loungeSection, "오늘의 라운지", 24);
-        label(loungeSection, "로컬 테스트 사용자끼리만 보입니다. 스토리는 24시간 뒤 사라집니다.");
-        storyInput = input(loungeSection, "24시간 스토리 (120자)", "");
-        button(loungeSection, "스토리 올리기", () -> publishSocial("stories", false));
-        button(loungeSection, "사진과 함께 올리기", () -> publishSocial("stories", true));
-        heading(loungeSection, "새로운 게시물", 22);
-        postInput = input(loungeSection, "게시물 (500자)", "");
-        button(loungeSection, "게시물 올리기", () -> publishSocial("posts", false));
-        button(loungeSection, "사진과 함께 올리기", () -> publishSocial("posts", true));
-        heading(loungeSection, "최근 스토리", 20);
-        storiesView = column(loungeSection);
-        heading(loungeSection, "최근 게시물", 20);
+        heading(loungeSection, "지금의 순간", 26);
+        label(loungeSection, "사진과 함께 남기는 24시간 스토리");
+        storyInput = new EditText(this);
+        postTitleInput = new EditText(this);
+        postInput = new EditText(this);
+        HorizontalScrollView storyScroll = new HorizontalScrollView(this);
+        storyScroll.setHorizontalScrollBarEnabled(false);
+        storiesView = new LinearLayout(this);
+        storiesView.setOrientation(LinearLayout.HORIZONTAL);
+        storyScroll.addView(storiesView);
+        loungeSection.addView(storyScroll, new LinearLayout.LayoutParams(-1, dp(118)));
+        button(loungeSection, "＋ 게시물 또는 스토리 작성", this::showComposerChoice);
+        heading(loungeSection, "게시물", 22);
         postsView = column(loungeSection);
 
         chatSection = section(page);
-        heading(chatSection, "현재 접속자 · 랜덤 대화", 24);
-        label(chatSection, "상대를 찾고, 이어서 대화할지 직접 결정하세요.");
+        heading(chatSection, "내 대화", 26);
+        label(chatSection, "진행 중이거나 최근에 끝난 대화를 확인합니다.");
         button(chatSection, "랜덤 대화 찾기", () -> new android.app.AlertDialog.Builder(this)
             .setTitle("랜덤 대화 상대를 찾을까요?")
             .setMessage("확인을 누르면 익명 상대를 찾습니다. 대화를 나가면 방이 종료됩니다.")
@@ -204,7 +216,7 @@ public final class MainActivity extends Activity {
         button(chatSection, "영상 재생 닫기", this::stopVideo);
 
         profileSection = section(page);
-        heading(profileSection, "내 설정", 24);
+        heading(profileSection, "내 활동 · 설정", 26);
         label(profileSection, "같은 Wi-Fi의 PC 서버 주소를 사용합니다.");
         String savedAddress = getPreferences(MODE_PRIVATE).getString(PREF_SERVER_ADDRESS, "http://192.168.0.2:3000");
         serverAddress = savedAddress;
@@ -233,6 +245,7 @@ public final class MainActivity extends Activity {
             JSONObject body = new JSONObject().put("nickname", nickname).put("gender", selectedGender == 1 ? "male" : "female").put("adultAttested", true);
             JSONObject user = new JSONObject(new String(requestRaw("POST", "/api/dev/users", body.toString().getBytes(StandardCharsets.UTF_8), "application/json", false), StandardCharsets.UTF_8));
             token = user.getString("token");
+            getPreferences(MODE_PRIVATE).edit().putString(PREF_TOKEN, token).apply();
             saveServerAddress();
             notice("계정을 만들었습니다. 매칭을 시작하세요.");
             refresh();
@@ -243,7 +256,8 @@ public final class MainActivity extends Activity {
         label(profileSection, "연결 수락 뒤 상대에게만 공개됩니다.");
         button(profileSection, "프로필 사진 선택·등록", this::pickProfilePhoto);
         ownProfilePhotosView = column(profileSection);
-        selectTab("profile");
+        selectTab(token.isEmpty() ? "profile" : "lounge");
+        if (!token.isEmpty()) refresh();
     }
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
@@ -263,7 +277,7 @@ public final class MainActivity extends Activity {
         LinearLayout child = new LinearLayout(this);
         child.setOrientation(LinearLayout.VERTICAL);
         child.setPadding(dp(22), dp(22), dp(22), dp(22));
-        child.setBackground(round(Color.rgb(23, 61, 48), 24));
+        child.setBackground(round(COLOR_PANEL, 24));
         parent.addView(child, new LinearLayout.LayoutParams(-1, -2));
         return child;
     }
@@ -271,7 +285,7 @@ public final class MainActivity extends Activity {
         LinearLayout child = new LinearLayout(this);
         child.setOrientation(LinearLayout.VERTICAL);
         child.setPadding(dp(18), dp(10), dp(18), dp(18));
-        child.setBackground(round(Color.WHITE, 22));
+        child.setBackground(round(COLOR_PANEL, 22));
         child.setElevation(dp(2));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
         params.topMargin = dp(8);
@@ -282,7 +296,7 @@ public final class MainActivity extends Activity {
         TextView view = new TextView(this);
         view.setText(text);
         view.setTextSize(14);
-        view.setTextColor(Color.rgb(79, 101, 88));
+        view.setTextColor(COLOR_MUTED);
         view.setPadding(0, dp(8), 0, dp(8));
         parent.addView(view);
         return view;
@@ -290,7 +304,7 @@ public final class MainActivity extends Activity {
     private void heading(LinearLayout parent, String text, int size) {
         TextView view = label(parent, text);
         view.setTextSize(size);
-        view.setTextColor(Color.rgb(23, 61, 48));
+        view.setTextColor(COLOR_TEXT);
         view.setTypeface(null, Typeface.BOLD);
         view.setPadding(0, dp(18), 0, dp(6));
     }
@@ -300,10 +314,10 @@ public final class MainActivity extends Activity {
         view.setHint(hint);
         view.setText(value);
         view.setTextSize(16);
-        view.setTextColor(Color.rgb(29, 55, 44));
-        view.setHintTextColor(Color.rgb(125, 142, 132));
-        GradientDrawable background = round(Color.rgb(248, 250, 248), 14);
-        background.setStroke(dp(1), Color.rgb(212, 222, 215));
+        view.setTextColor(COLOR_TEXT);
+        view.setHintTextColor(COLOR_MUTED);
+        GradientDrawable background = round(COLOR_FIELD, 14);
+        background.setStroke(dp(1), Color.rgb(75, 74, 86));
         view.setBackground(background);
         view.setPadding(dp(14), dp(4), dp(14), dp(4));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(52));
@@ -318,7 +332,8 @@ public final class MainActivity extends Activity {
         view.setTextColor(Color.WHITE);
         view.setTextSize(15);
         view.setTypeface(null, Typeface.BOLD);
-        view.setBackground(round(Color.rgb(31, 111, 74), 14));
+        view.setBackground(round(COLOR_BLUE, 14));
+        view.setTextColor(Color.rgb(20, 35, 44));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(50));
         params.topMargin = dp(8);
         parent.addView(view, params);
@@ -346,9 +361,9 @@ public final class MainActivity extends Activity {
         styleTab(profileTab, !lounge && !chat);
     }
     private void styleTab(Button view, boolean selected) {
-        view.setTextColor(selected ? Color.WHITE : Color.rgb(23, 61, 48));
+        view.setTextColor(selected ? Color.rgb(20, 35, 44) : COLOR_TEXT);
         view.setTypeface(null, Typeface.BOLD);
-        view.setBackground(round(selected ? Color.rgb(23, 61, 48) : Color.rgb(225, 234, 227), 14));
+        view.setBackground(round(selected ? COLOR_BLUE : COLOR_FIELD, 14));
     }
     private void notice(String text) { runOnUiThread(() -> statusView.setText(text)); }
     private void background(Work work) {
@@ -433,16 +448,244 @@ public final class MainActivity extends Activity {
         return new JSONObject(new String(request(method, path, bytes, "application/json"), StandardCharsets.UTF_8));
     }
 
+    // 라운지 작성은 피드 밖의 다이얼로그에서 시작해 화면이 입력 폼으로 길어지지 않게 한다.
+    private void showComposerChoice() {
+        new android.app.AlertDialog.Builder(this).setTitle("새로 만들기")
+            .setItems(new String[] { "사진 스토리", "게시물" }, (dialog, which) -> {
+                if (which == 0) showStoryComposer(); else showPostComposer();
+            }).show();
+    }
+
+    private EditText dialogInput(String hint, boolean multiline) {
+        EditText input = new EditText(this);
+        input.setHint(hint); input.setTextColor(COLOR_TEXT); input.setHintTextColor(COLOR_MUTED);
+        input.setTextSize(16); input.setSingleLine(!multiline);
+        if (multiline) input.setMinLines(3);
+        input.setPadding(dp(16), dp(8), dp(16), dp(8));
+        input.setBackground(round(COLOR_FIELD, 14));
+        return input;
+    }
+
+    private void showStoryComposer() {
+        LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); body.setPadding(dp(20), dp(8), dp(20), dp(8));
+        TextView guide = new TextView(this); guide.setText("사진은 필수이며 24시간 뒤 사라집니다."); guide.setTextColor(COLOR_MUTED); body.addView(guide);
+        storyInput = dialogInput("스토리에 남길 글", true); body.addView(storyInput, new LinearLayout.LayoutParams(-1, -2));
+        new android.app.AlertDialog.Builder(this).setTitle("새 스토리") .setView(body)
+            .setNegativeButton("취소", null).setPositiveButton("사진 선택", (dialog, which) -> publishSocial("stories", true)).show();
+    }
+
+    private void showPostComposer() {
+        LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); body.setPadding(dp(20), dp(8), dp(20), dp(8));
+        postTitleInput = dialogInput("제목", false); body.addView(postTitleInput, new LinearLayout.LayoutParams(-1, -2));
+        postInput = dialogInput("내용", true); body.addView(postInput, new LinearLayout.LayoutParams(-1, -2));
+        new android.app.AlertDialog.Builder(this).setTitle("게시물 작성").setView(body)
+            .setNegativeButton("취소", null).setNeutralButton("사진 추가", (dialog, which) -> publishSocial("posts", true))
+            .setPositiveButton("올리기", (dialog, which) -> publishSocial("posts", false)).show();
+    }
+
+    private void addStoryComposerCircle() {
+        LinearLayout item = new LinearLayout(this); item.setOrientation(LinearLayout.VERTICAL); item.setGravity(Gravity.CENTER);
+        TextView plus = new TextView(this); plus.setText("+"); plus.setTextSize(32); plus.setTextColor(COLOR_BG); plus.setGravity(Gravity.CENTER);
+        item.addView(plus, new LinearLayout.LayoutParams(dp(64), dp(64)));
+        plus.setBackground(round(COLOR_BLUE, 32));
+        TextView caption = new TextView(this); caption.setText("내 스토리"); caption.setTextColor(COLOR_TEXT); caption.setTextSize(11); caption.setGravity(Gravity.CENTER);
+        item.addView(caption, new LinearLayout.LayoutParams(dp(76), dp(30)));
+        item.setPadding(dp(4), 0, dp(6), 0); item.setOnClickListener(view -> showStoryComposer());
+        storiesView.addView(item, new LinearLayout.LayoutParams(dp(84), -1));
+    }
+
+    private void addStoryCircle(JSONObject story) {
+        String id = story.optString("id");
+        LinearLayout item = new LinearLayout(this); item.setOrientation(LinearLayout.VERTICAL); item.setGravity(Gravity.CENTER); item.setPadding(dp(4), 0, dp(6), 0);
+        ImageView image = new ImageView(this); image.setScaleType(ImageView.ScaleType.CENTER_CROP); image.setBackground(round(story.optBoolean("mine") ? COLOR_BLUE : COLOR_PINK, 34)); image.setClipToOutline(true);
+        item.addView(image, new LinearLayout.LayoutParams(dp(68), dp(68)));
+        TextView caption = new TextView(this); caption.setText(story.optBoolean("mine") ? "내 스토리" : "스토리"); caption.setTextColor(COLOR_TEXT); caption.setTextSize(11); caption.setGravity(Gravity.CENTER);
+        item.addView(caption, new LinearLayout.LayoutParams(dp(82), dp(30)));
+        item.setOnClickListener(view -> openStory(story)); storiesView.addView(item, new LinearLayout.LayoutParams(dp(88), -1));
+        background(() -> {
+            byte[] bytes = request("GET", "/api/stories/" + id + "/image", null, null);
+            Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+            runOnUiThread(() -> { if (bitmap != null && item.isAttachedToWindow()) image.setImageBitmap(bitmap); });
+        });
+    }
+
+    private void openStory(JSONObject story) {
+        String id = story.optString("id");
+        background(() -> {
+            if (!story.optBoolean("mine")) json("POST", "/api/stories/" + id + "/view", null);
+            byte[] bytes = request("GET", "/api/stories/" + id + "/image", null, null);
+            Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+            runOnUiThread(() -> {
+                LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); body.setPadding(dp(12), dp(8), dp(12), dp(8));
+                ImageView image = new ImageView(this); image.setAdjustViewBounds(true); image.setImageBitmap(bitmap); body.addView(image, new LinearLayout.LayoutParams(-1, dp(360)));
+                TextView text = new TextView(this); text.setText(story.optString("body")); text.setTextColor(COLOR_TEXT); text.setTextSize(18); text.setPadding(0, dp(16), 0, dp(8)); body.addView(text);
+                TextView meta = new TextView(this); meta.setText("◉ " + story.optInt("viewCount") + " · " + remainingStoryTime(story.optLong("expiresAt"))); meta.setTextColor(COLOR_MUTED); body.addView(meta);
+                Button menu = new Button(this); menu.setText("☰"); menu.setTextColor(COLOR_TEXT); menu.setBackgroundColor(Color.TRANSPARENT); body.addView(menu);
+                android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this).setView(body).setNegativeButton("닫기", null).create();
+                menu.setOnClickListener(view -> showStoryMenu(id, dialog));
+                dialog.show();
+                if (story.optBoolean("mine")) dialog.setButton(android.app.AlertDialog.BUTTON_POSITIVE, "조회 " + story.optInt("viewerCount"), (d, w) -> showStoryViewers(id));
+            });
+        });
+    }
+
+    private String remainingStoryTime(long expiresAt) {
+        long minutes = Math.max(0, (expiresAt - System.currentTimeMillis() + 59999) / 60000);
+        return minutes >= 60 ? ((minutes + 59) / 60) + "시간 남음" : minutes + "분 남음";
+    }
+
+    private void showStoryMenu(String storyId, android.app.AlertDialog parent) {
+        new android.app.AlertDialog.Builder(this).setItems(new String[] { "쪽지 보내기", "차단하기", "신고하기" }, (dialog, which) -> {
+            if (which == 0) showNoteComposer("/api/stories/" + storyId + "/message");
+            else if (which == 1) background(() -> { json("POST", "/api/stories/" + storyId + "/block", null); parent.dismiss(); refresh(); });
+            else showReportComposer("/api/stories/" + storyId + "/report");
+        }).show();
+    }
+
+    private void showStoryViewers(String storyId) {
+        background(() -> {
+            JSONObject result = json("GET", "/api/stories/" + storyId + "/viewers", null);
+            runOnUiThread(() -> {
+                LinearLayout list = new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL); list.setPadding(dp(20), dp(8), dp(20), dp(8));
+                TextView total = new TextView(this); total.setText("누적 조회 " + result.optInt("viewCount") + " · 방문자 " + result.optInt("viewerCount")); total.setTextColor(COLOR_TEXT); list.addView(total);
+                JSONArray viewers = result.optJSONArray("viewers");
+                if (viewers == null || viewers.length() == 0) label(list, "아직 조회한 사람이 없습니다.");
+                else for (int i = 0; i < viewers.length(); i++) { JSONObject viewer = viewers.optJSONObject(i); if (viewer != null) label(list, ("male".equals(viewer.optString("gender")) ? "● 남성 방문자" : "● 여성 방문자") + " · " + viewer.optInt("viewCount") + "회"); }
+                new android.app.AlertDialog.Builder(this).setTitle("스토리 조회").setView(list).setPositiveButton("닫기", null).show();
+            });
+        });
+    }
+
+    private void showNoteComposer(String path) {
+        EditText input = dialogInput("보낼 쪽지", true);
+        new android.app.AlertDialog.Builder(this).setTitle("익명 쪽지").setView(input).setNegativeButton("취소", null)
+            .setPositiveButton("보내기", (dialog, which) -> background(() -> json("POST", path, new JSONObject().put("body", input.getText().toString().trim())))).show();
+    }
+
+    private void showReportComposer(String path) {
+        EditText input = dialogInput("신고 사유", true);
+        new android.app.AlertDialog.Builder(this).setTitle("신고하기").setView(input).setNegativeButton("취소", null)
+            .setPositiveButton("신고", (dialog, which) -> background(() -> json("POST", path, new JSONObject().put("reason", input.getText().toString().trim())))).show();
+    }
+
+    // 피드에는 핵심 정보만 두고, 누르면 상세 화면에서 본문과 댓글을 이어서 읽는다.
+    private void addPostCard(JSONObject post) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(12), dp(16), dp(12));
+        GradientDrawable background = round(COLOR_FIELD, 18);
+        background.setStroke(dp(1), Color.rgb(73, 72, 84));
+        card.setBackground(background);
+        String title = post.optString("title").trim();
+        String body = post.optString("body").trim();
+        TextView titleView = new TextView(this);
+        titleView.setText(title.isEmpty() ? body : title);
+        titleView.setTextColor(COLOR_TEXT); titleView.setTextSize(19); titleView.setTypeface(null, Typeface.BOLD);
+        card.addView(titleView);
+        if (!title.isEmpty() && !body.isEmpty()) {
+            TextView preview = new TextView(this);
+            preview.setText(body); preview.setTextColor(COLOR_MUTED); preview.setTextSize(15); preview.setMaxLines(2);
+            preview.setPadding(0, dp(6), 0, 0); card.addView(preview);
+        }
+        TextView stats = new TextView(this);
+        stats.setText("◉ " + post.optInt("viewCount") + "    ◌ " + post.optInt("commentCount"));
+        stats.setTextColor(COLOR_MUTED); stats.setTextSize(13); stats.setPadding(0, dp(12), 0, 0); card.addView(stats);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.topMargin = dp(8); postsView.addView(card, params);
+        card.setOnClickListener(view -> openPost(post));
+    }
+
+    private Button compactButton(String title, Runnable action) {
+        Button button = new Button(this); button.setText(title); button.setAllCaps(false); button.setTextSize(13);
+        button.setTextColor(COLOR_TEXT); button.setBackground(round(COLOR_FIELD, 12));
+        button.setOnClickListener(view -> action.run());
+        return button;
+    }
+
+    private void openPost(JSONObject post) {
+        final String id = post.optString("id");
+        background(() -> {
+            if (!post.optBoolean("mine")) json("POST", "/api/posts/" + id + "/view", null);
+            JSONObject commentResult = json("GET", "/api/posts/" + id + "/comments", null);
+            Bitmap bitmap = null;
+            if (post.optBoolean("hasImage")) {
+                byte[] bytes = request("GET", "/api/posts/" + id + "/image", null, null);
+                bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+            }
+            final Bitmap loadedImage = bitmap;
+            runOnUiThread(() -> {
+                ScrollView scroll = new ScrollView(this);
+                LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); body.setPadding(dp(18), dp(8), dp(18), dp(8));
+                scroll.addView(body);
+                TextView title = new TextView(this); title.setText(post.optString("title").trim().isEmpty() ? post.optString("body") : post.optString("title"));
+                title.setTextColor(COLOR_TEXT); title.setTextSize(24); title.setTypeface(null, Typeface.BOLD); body.addView(title);
+                if (!post.optString("title").trim().isEmpty()) {
+                    TextView text = new TextView(this); text.setText(post.optString("body")); text.setTextColor(COLOR_TEXT); text.setTextSize(17); text.setPadding(0, dp(14), 0, dp(8)); body.addView(text);
+                }
+                if (loadedImage != null) { ImageView image = new ImageView(this); image.setImageBitmap(loadedImage); image.setAdjustViewBounds(true); body.addView(image, new LinearLayout.LayoutParams(-1, -2)); }
+                JSONArray comments = commentResult.optJSONArray("comments");
+                int commentCount = comments == null ? 0 : comments.length();
+                TextView stats = new TextView(this); stats.setText("◉ " + post.optInt("viewCount") + "    ◌ " + commentCount); stats.setTextColor(COLOR_MUTED); stats.setPadding(0, dp(14), 0, dp(8)); body.addView(stats);
+                TextView commentsTitle = new TextView(this); commentsTitle.setText("댓글"); commentsTitle.setTextColor(COLOR_TEXT); commentsTitle.setTextSize(18); commentsTitle.setTypeface(null, Typeface.BOLD); body.addView(commentsTitle);
+                if (comments == null || comments.length() == 0) label(body, "아직 댓글이 없습니다.");
+                else for (int i = 0; i < comments.length(); i++) addCommentRow(body, comments.optJSONObject(i));
+                Button comment = compactButton("댓글 남기기", () -> showCommentComposer(id)); body.addView(comment, new LinearLayout.LayoutParams(-1, dp(44)));
+                android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this).setView(scroll).setNegativeButton("닫기", null).create();
+                dialog.show();
+            });
+        });
+    }
+
+    private void addCommentRow(LinearLayout parent, JSONObject comment) {
+        if (comment == null) return;
+        LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.VERTICAL); row.setPadding(dp(12), dp(8), dp(12), dp(8)); row.setBackground(round(COLOR_PANEL, 12));
+        TextView text = new TextView(this); text.setText(("male".equals(comment.optString("gender")) ? "● " : "● ") + comment.optString("body")); text.setTextColor(COLOR_TEXT); text.setTextSize(15); row.addView(text);
+        Button reply = compactButton("답글 " + comment.optInt("replyCount"), () -> showReplies(comment));
+        row.addView(reply, new LinearLayout.LayoutParams(-2, dp(38)));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.topMargin = dp(6); parent.addView(row, params);
+    }
+
+    private void showCommentComposer(String postId) {
+        EditText input = dialogInput("댓글을 남겨 주세요", true);
+        new android.app.AlertDialog.Builder(this).setTitle("댓글").setView(input).setNegativeButton("취소", null)
+            .setPositiveButton("등록", (dialog, which) -> background(() -> { json("POST", "/api/posts/" + postId + "/comments", new JSONObject().put("body", input.getText().toString().trim())); notice("댓글을 남겼습니다."); refresh(); })).show();
+    }
+
+    private void showReplies(JSONObject comment) {
+        String id = comment.optString("id");
+        background(() -> {
+            JSONArray replies = json("GET", "/api/comments/" + id + "/replies", null).optJSONArray("replies");
+            runOnUiThread(() -> {
+                LinearLayout list = new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL); list.setPadding(dp(18), dp(8), dp(18), dp(8));
+                TextView original = new TextView(this); original.setText(comment.optString("body")); original.setTextColor(COLOR_TEXT); original.setTextSize(17); original.setTypeface(null, Typeface.BOLD); list.addView(original);
+                if (replies == null || replies.length() == 0) label(list, "아직 답글이 없습니다.");
+                else for (int i = 0; i < replies.length(); i++) { JSONObject reply = replies.optJSONObject(i); if (reply != null) label(list, "↳ " + reply.optString("body")); }
+                new android.app.AlertDialog.Builder(this).setTitle("답글").setView(list).setNegativeButton("닫기", null)
+                    .setPositiveButton("답글 작성", (dialog, which) -> showReplyComposer(id)).show();
+            });
+        });
+    }
+
+    private void showReplyComposer(String commentId) {
+        EditText input = dialogInput("답글을 남겨 주세요", true);
+        new android.app.AlertDialog.Builder(this).setTitle("답글").setView(input).setNegativeButton("취소", null)
+            .setPositiveButton("등록", (dialog, which) -> background(() -> { json("POST", "/api/comments/" + commentId + "/replies", new JSONObject().put("body", input.getText().toString().trim())); notice("답글을 남겼습니다."); refresh(); })).show();
+    }
+
     // 라운지 글은 랜덤 대화와 별개이며, 사진을 고른 경우에는 본문 생성 뒤 정규화 사진을 연결한다.
     private void publishSocial(String kind, boolean chooseImage) {
         if (token.isEmpty()) { notice("테스트 계정을 먼저 만드세요."); return; }
         EditText input = "stories".equals(kind) ? storyInput : postInput;
         String body = input.getText().toString().trim();
         if (body.isEmpty()) { notice("내용을 입력하세요."); return; }
+        String title = "posts".equals(kind) ? postTitleInput.getText().toString().trim() : "";
+        if ("posts".equals(kind) && title.isEmpty()) { notice("게시물 제목을 입력하세요."); return; }
+        if ("stories".equals(kind) && !chooseImage) { notice("스토리는 사진을 반드시 추가하세요."); return; }
         if (chooseImage) {
-            if (!kind.equals(pendingSocialKind) || !body.equals(pendingSocialBody) || !token.equals(pendingSocialToken)) pendingSocialId = "";
+            if (!kind.equals(pendingSocialKind) || !body.equals(pendingSocialBody) || !title.equals(pendingSocialTitle) || !token.equals(pendingSocialToken)) pendingSocialId = "";
             pendingSocialKind = kind;
             pendingSocialBody = body;
+            pendingSocialTitle = title;
             pendingSocialToken = token;
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -451,7 +694,9 @@ public final class MainActivity extends Activity {
             return;
         }
         background(() -> {
-            json("POST", "/api/" + kind, new JSONObject().put("body", body));
+            JSONObject payload = new JSONObject().put("body", body);
+            if ("posts".equals(kind)) payload.put("title", title);
+            json("POST", "/api/" + kind, payload);
             runOnUiThread(() -> input.setText(""));
             notice("stories".equals(kind) ? "24시간 스토리를 올렸습니다." : "게시물을 올렸습니다.");
             refresh();
@@ -468,27 +713,22 @@ public final class MainActivity extends Activity {
             JSONArray posts = json("GET", "/api/feed", null).getJSONArray("posts");
             runOnUiThread(() -> {
                 storiesView.removeAllViews();
-                if (stories.length() == 0) label(storiesView, "아직 스토리가 없습니다.");
+                addStoryComposerCircle();
+                if (stories.length() == 0) {
+                    TextView empty = new TextView(this); empty.setText("첫 스토리"); empty.setTextColor(COLOR_MUTED); empty.setGravity(Gravity.CENTER); empty.setTextSize(12);
+                    storiesView.addView(empty, new LinearLayout.LayoutParams(dp(92), -1));
+                }
                 for (int i = 0; i < stories.length(); i++) {
                     JSONObject story = stories.optJSONObject(i);
                     if (story == null) continue;
-                    String id = story.optString("id");
-                    label(storiesView, "스토리 · " + story.optString("body"));
-                    if (story.optBoolean("hasImage")) button(storiesView, "스토리 사진 보기", () -> showPublicImage("/api/stories/" + id + "/image"));
-                    if (story.optBoolean("mine")) button(storiesView, "내 스토리 삭제", () -> background(() -> { json("DELETE", "/api/stories/" + id, null); refresh(); }));
+                    if (story.optBoolean("hasImage")) addStoryCircle(story);
                 }
                 postsView.removeAllViews();
                 if (posts.length() == 0) label(postsView, "아직 게시물이 없습니다.");
                 for (int i = 0; i < posts.length(); i++) {
                     JSONObject post = posts.optJSONObject(i);
                     if (post == null) continue;
-                    String id = post.optString("id");
-                    String title = post.optString("title").trim();
-                    String body = post.optString("body");
-                    String line = (title.isEmpty() || title.equals(body) ? body : title + "\n" + body) + "\n◉ " + post.optInt("viewCount") + "   ◌ " + post.optInt("commentCount");
-                    label(postsView, line);
-                    if (post.optBoolean("hasImage")) button(postsView, "게시물 사진 보기", () -> showPublicImage("/api/posts/" + id + "/image"));
-                    if (post.optBoolean("mine")) button(postsView, "내 게시물 삭제", () -> background(() -> { json("DELETE", "/api/posts/" + id, null); refresh(); }));
+                    addPostCard(post);
                 }
                 roomsView.removeAllViews();
                 if (rooms.length() == 0) label(roomsView, state.optBoolean("waiting") ? "상대를 기다리는 중" : "대화방 없음");
@@ -654,12 +894,20 @@ public final class MainActivity extends Activity {
                 if (!("image/jpeg".equals(type) || "image/png".equals(type))) throw new IllegalArgumentException("JPEG 또는 PNG만 보낼 수 있습니다.");
                 byte[] bytes = readLimited(getContentResolver().openInputStream(uri), MAX_UPLOAD);
                 if (!token.equals(pendingSocialToken)) throw new IllegalStateException("계정이 변경되었습니다. 다시 사진을 선택하세요.");
-                if (pendingSocialId.isEmpty()) pendingSocialId = json("POST", "/api/" + kind, new JSONObject().put("body", pendingSocialBody)).getString("id");
+                if (pendingSocialId.isEmpty()) {
+                    JSONObject payload = new JSONObject().put("body", pendingSocialBody);
+                    if ("posts".equals(kind)) payload.put("title", pendingSocialTitle);
+                    pendingSocialId = json("POST", "/api/" + kind, payload).getString("id");
+                }
                 request("POST", "/api/" + kind + "/" + pendingSocialId + "/image", bytes, type);
                 pendingSocialId = "";
                 pendingSocialKind = "";
                 pendingSocialBody = "";
-                runOnUiThread(() -> ("stories".equals(kind) ? storyInput : postInput).setText(""));
+                pendingSocialTitle = "";
+                runOnUiThread(() -> {
+                    ("stories".equals(kind) ? storyInput : postInput).setText("");
+                    if ("posts".equals(kind)) postTitleInput.setText("");
+                });
                 notice("stories".equals(kind) ? "사진 스토리를 올렸습니다." : "사진 게시물을 올렸습니다.");
                 refresh();
                 return;

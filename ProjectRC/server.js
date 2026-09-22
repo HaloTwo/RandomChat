@@ -150,12 +150,23 @@ function createDatabase(dbPath) {
       viewer_id TEXT NOT NULL REFERENCES users(id), viewed_at INTEGER NOT NULL,
       PRIMARY KEY(story_id, viewer_id)
     );
+    CREATE TABLE IF NOT EXISTS story_view_events (
+      id TEXT PRIMARY KEY, story_id TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+      viewer_id TEXT NOT NULL REFERENCES users(id), viewed_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS story_view_events_story ON story_view_events(story_id, viewed_at DESC);
     CREATE TABLE IF NOT EXISTS post_comments (
       id TEXT PRIMARY KEY, post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
       author_id TEXT NOT NULL REFERENCES users(id), anonymous_label TEXT NOT NULL,
       body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 300), created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS post_comments_post ON post_comments(post_id, created_at);
+    CREATE TABLE IF NOT EXISTS comment_replies (
+      id TEXT PRIMARY KEY, comment_id TEXT NOT NULL REFERENCES post_comments(id) ON DELETE CASCADE,
+      author_id TEXT NOT NULL REFERENCES users(id), body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 300),
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS comment_replies_comment ON comment_replies(comment_id, created_at);
     CREATE TABLE IF NOT EXISTS private_notes (
       id TEXT PRIMARY KEY, sender_id TEXT NOT NULL REFERENCES users(id), receiver_id TEXT NOT NULL REFERENCES users(id),
       body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 500), created_at INTEGER NOT NULL, read_at INTEGER
@@ -790,7 +801,8 @@ function createApp(options = {}) {
       }
       const postCommentsRoute = /^\/api\/posts\/([^/]+)\/comments$/.exec(pathname);
       if (postCommentsRoute && req.method === 'GET') {
-        const comments = db.prepare(`SELECT c.id,c.body,c.anonymous_label AS anonymousLabel,u.gender,c.created_at AS createdAt,c.author_id = ? AS mine
+        const comments = db.prepare(`SELECT c.id,c.body,c.anonymous_label AS anonymousLabel,u.gender,c.created_at AS createdAt,c.author_id = ? AS mine,
+          (SELECT count(*) FROM comment_replies r WHERE r.comment_id = c.id) AS replyCount
           FROM post_comments c JOIN users u ON u.id = c.author_id AND u.deleted_at IS NULL WHERE c.post_id = ? ORDER BY c.created_at ASC LIMIT 100`).all(user.id, postCommentsRoute[1]);
         return send(res, 200, { comments: comments.map(comment => ({ ...comment, mine: !!comment.mine })) });
       }
@@ -801,6 +813,22 @@ function createApp(options = {}) {
         if (!post) throw httpError(404, '게시물을 찾을 수 없습니다.');
         const id = uuid();
         db.prepare('INSERT INTO post_comments(id,post_id,author_id,anonymous_label,body,created_at) VALUES (?,?,?,?,?,?)').run(id, post.id, user.id, anonymousLabel(id), body, now);
+        return send(res, 201, { id });
+      }
+      const commentRepliesRoute = /^\/api\/comments\/([^/]+)\/replies$/.exec(pathname);
+      if (commentRepliesRoute && req.method === 'GET') {
+        const replies = db.prepare(`SELECT r.id,r.body,r.created_at AS createdAt,r.author_id = ? AS mine,u.gender
+          FROM comment_replies r JOIN users u ON u.id = r.author_id AND u.deleted_at IS NULL
+          WHERE r.comment_id = ? ORDER BY r.created_at ASC LIMIT 100`).all(user.id, commentRepliesRoute[1]);
+        return send(res, 200, { replies: replies.map(reply => ({ ...reply, mine: !!reply.mine })) });
+      }
+      if (commentRepliesRoute && req.method === 'POST') {
+        const body = String((await readJson(req)).body || '').trim();
+        if (!body || body.length > 300) throw httpError(400, '답글은 1~300자로 입력하세요.');
+        const comment = db.prepare('SELECT id FROM post_comments WHERE id = ?').get(commentRepliesRoute[1]);
+        if (!comment) throw httpError(404, '댓글을 찾을 수 없습니다.');
+        const id = uuid();
+        db.prepare('INSERT INTO comment_replies(id,comment_id,author_id,body,created_at) VALUES (?,?,?,?,?)').run(id, comment.id, user.id, body, now);
         return send(res, 201, { id });
       }
       const postMessageRoute = /^\/api\/posts\/([^/]+)\/message$/.exec(pathname);
@@ -835,7 +863,8 @@ function createApp(options = {}) {
       if (pathname === '/api/stories' && req.method === 'GET') {
         db.prepare('DELETE FROM stories WHERE expires_at <= ?').run(now);
         const stories = db.prepare(`SELECT s.id,s.body,s.anonymous_label AS anonymousLabel,u.gender,s.created_at AS createdAt,s.expires_at AS expiresAt,s.image IS NOT NULL AS hasImage,
-          (SELECT count(*) FROM story_views v WHERE v.story_id = s.id) AS viewCount,
+          (SELECT count(*) FROM story_view_events v WHERE v.story_id = s.id) AS viewCount,
+          (SELECT count(*) FROM story_views v WHERE v.story_id = s.id) AS viewerCount,
           s.author_id = ? AS mine
           FROM stories s JOIN users u ON u.id = s.author_id AND u.deleted_at IS NULL
           WHERE s.expires_at > ? AND s.image IS NOT NULL ORDER BY s.created_at DESC LIMIT 30`).all(user.id, now);
@@ -853,9 +882,24 @@ function createApp(options = {}) {
       if (storyViewRoute && req.method === 'POST') {
         const story = db.prepare('SELECT author_id FROM stories WHERE id = ? AND expires_at > ? AND image IS NOT NULL').get(storyViewRoute[1], now);
         if (!story) throw httpError(404, '스토리를 찾을 수 없습니다.');
-        if (story.author_id !== user.id) db.prepare('INSERT INTO story_views(story_id,viewer_id,viewed_at) VALUES (?,?,?) ON CONFLICT(story_id,viewer_id) DO NOTHING').run(storyViewRoute[1], user.id, now);
-        const viewCount = db.prepare('SELECT count(*) AS n FROM story_views WHERE story_id = ?').get(storyViewRoute[1]).n;
-        return send(res, 200, { recorded: story.author_id !== user.id, viewCount, viewerDetailsAvailable: false });
+        if (story.author_id !== user.id) {
+          db.prepare('INSERT INTO story_view_events(id,story_id,viewer_id,viewed_at) VALUES (?,?,?,?)').run(uuid(), storyViewRoute[1], user.id, now);
+          db.prepare('INSERT INTO story_views(story_id,viewer_id,viewed_at) VALUES (?,?,?) ON CONFLICT(story_id,viewer_id) DO UPDATE SET viewed_at = excluded.viewed_at').run(storyViewRoute[1], user.id, now);
+        }
+        const viewCount = db.prepare('SELECT count(*) AS n FROM story_view_events WHERE story_id = ?').get(storyViewRoute[1]).n;
+        const viewerCount = db.prepare('SELECT count(*) AS n FROM story_views WHERE story_id = ?').get(storyViewRoute[1]).n;
+        return send(res, 200, { recorded: story.author_id !== user.id, viewCount, viewerCount });
+      }
+      const storyViewersRoute = /^\/api\/stories\/([^/]+)\/viewers$/.exec(pathname);
+      if (storyViewersRoute && req.method === 'GET') {
+        const story = db.prepare('SELECT id FROM stories WHERE id = ? AND author_id = ? AND expires_at > ? AND image IS NOT NULL').get(storyViewersRoute[1], user.id, now);
+        if (!story) throw httpError(404, '내 스토리를 찾을 수 없습니다.');
+        const viewers = db.prepare(`SELECT u.gender, v.viewed_at AS viewedAt,
+          (SELECT count(*) FROM story_view_events e WHERE e.story_id = v.story_id AND e.viewer_id = v.viewer_id) AS viewCount
+          FROM story_views v JOIN users u ON u.id = v.viewer_id AND u.deleted_at IS NULL
+          WHERE v.story_id = ? ORDER BY v.viewed_at DESC LIMIT 100`).all(story.id);
+        const viewCount = db.prepare('SELECT count(*) AS n FROM story_view_events WHERE story_id = ?').get(story.id).n;
+        return send(res, 200, { viewCount, viewerCount: viewers.length, viewers });
       }
       if (storyRoute && storyRoute[2] === 'image' && req.method === 'POST') {
         const declaredType = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
