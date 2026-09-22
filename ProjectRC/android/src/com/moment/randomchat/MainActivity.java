@@ -262,6 +262,8 @@ public final class MainActivity extends Activity {
         } else {
             label(profileSection, "이 기기는 PC 서버와 연결되어 있습니다.");
             button(profileSection, "내 글 · 내 댓글", this::showMyActivity);
+            button(profileSection, "프로필 방문자", this::showProfileVisitors);
+            button(profileSection, "연결 설정", this::showConnectionSettings);
         }
         heading(profileSection, "내 프로필 사진", 20);
         label(profileSection, "연결 수락 뒤 상대에게만 공개됩니다.");
@@ -477,6 +479,32 @@ public final class MainActivity extends Activity {
                 JSONObject result = json("POST", "/api/queue", null);
                 notice(result.optBoolean("waiting") ? "상대를 기다리는 중입니다." : "매칭되었습니다.");
                 refresh();
+            })).show();
+    }
+
+    // 연결 설정은 첫 실행 뒤에는 접어 두고, Wi-Fi 주소가 바뀔 때만 다시 연다.
+    private void showConnectionSettings() {
+        EditText address = dialogInput("http://192.168.x.x:3000", false);
+        address.setText(serverAddress);
+        new android.app.AlertDialog.Builder(this).setTitle("연결 설정").setView(address)
+            .setNegativeButton("닫기", null)
+            .setNeutralButton("계정 교체", (dialog, which) -> {
+                token = ""; roomId = "";
+                getPreferences(MODE_PRIVATE).edit().remove(PREF_TOKEN).apply();
+                recreate();
+            })
+            .setPositiveButton("연결 확인·저장", (dialog, which) -> background(() -> {
+                String previous = serverAddress;
+                serverAddress = address.getText().toString().trim();
+                try {
+                    JSONObject health = new JSONObject(new String(requestRaw("GET", "/api/health", null, null, false), StandardCharsets.UTF_8));
+                    if (!health.optBoolean("ok")) throw new IllegalStateException("서버 응답을 확인하지 못했습니다.");
+                    saveServerAddress();
+                    notice("서버 주소를 저장했습니다.");
+                } catch (Exception error) {
+                    serverAddress = previous;
+                    throw error;
+                }
             })).show();
     }
 
