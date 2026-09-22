@@ -210,6 +210,10 @@ test('랜덤 매칭, 비공개 소개, 요청 수락, 무료 차감과 메시지
   assert.equal((await call(`/api/rooms/${roomId}/messages`, 'POST', { body: '안녕하세요', clientId: crypto.randomUUID() }, a.token)).status, 201);
   assert.equal((await call(`/api/rooms/${roomId}`, 'GET', null, b.token)).data.messages[0].body, '안녕하세요');
   assert.equal((await call(`/api/rooms/${roomId}/request`, 'POST', null, a.token)).status, 201);
+  const received = await call('/api/requests/received', 'GET', null, b.token);
+  assert.equal(received.status, 200);
+  assert.equal(received.data.requests[0].roomId, roomId);
+  assert.equal(received.data.requests[0].nickname, '가');
   assert.equal((await call('/api/me', 'GET', null, a.token)).data.quota.reserved, 1);
   assert.equal((await call(`/api/rooms/${roomId}/request/decision`, 'POST', { decision: 'accept' }, b.token)).status, 200);
   for (let i = 0; i < 100; i++) {

@@ -461,11 +461,14 @@ function quota(db, userId, now) {
 
 function roomView(db, room, userId, includeMessages = false) {
   const peerId = otherId(room, userId);
-  const peer = db.prepare('SELECT nickname, intro, deleted_at FROM users WHERE id = ?').get(peerId);
+  const peer = db.prepare('SELECT nickname, intro, gender, deleted_at FROM users WHERE id = ?').get(peerId);
   const request = db.prepare("SELECT id, requester_id, receiver_id, status, expires_at FROM requests WHERE room_id = ? ORDER BY created_at DESC LIMIT 1").get(room.id);
+  const lastMessage = db.prepare('SELECT body, created_at FROM messages WHERE room_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1').get(room.id);
+  const unreadCount = db.prepare('SELECT count(*) AS n FROM messages WHERE room_id = ? AND sender_id = ? AND read_at IS NULL').get(room.id, peerId).n;
   const view = {
     id: room.id, status: room.status, createdAt: room.created_at,
-    peer: { displayName: peer.deleted_at ? '탈퇴한 사용자' : room.status === 'connected' ? peer.nickname : '랜덤 상대', intro: peer.deleted_at ? null : room.status === 'connected' ? peer.intro : null },
+    peer: { displayName: peer.deleted_at ? '탈퇴한 사용자' : room.status === 'connected' ? peer.nickname : '랜덤 상대', intro: peer.deleted_at ? null : room.status === 'connected' ? peer.intro : null, ...(peer.deleted_at ? {} : { gender: peer.gender }) },
+    lastMessage: lastMessage ? lastMessage.body : '', lastMessageAt: lastMessage ? lastMessage.created_at : room.created_at, unreadCount,
     request: request ? { id: request.id, direction: request.requester_id === userId ? 'sent' : 'received', status: request.status, expiresAt: request.expires_at } : null
   };
   if (includeMessages) {
@@ -972,6 +975,13 @@ function createApp(options = {}) {
         const notes = db.prepare('SELECT id,body,created_at AS createdAt,read_at IS NOT NULL AS read FROM private_notes WHERE receiver_id = ? ORDER BY created_at DESC LIMIT 100').all(user.id);
         db.prepare('UPDATE private_notes SET read_at = ? WHERE receiver_id = ? AND read_at IS NULL').run(now, user.id);
         return send(res, 200, { notes: notes.map(note => ({ ...note, read: !!note.read })) });
+      }
+      if (pathname === '/api/requests/received' && req.method === 'GET') {
+        expireRequests(db, now);
+        const requests = db.prepare(`SELECT r.room_id AS roomId, r.created_at AS createdAt, u.nickname, u.gender
+          FROM requests r JOIN users u ON u.id = r.requester_id AND u.deleted_at IS NULL
+          WHERE r.receiver_id = ? AND r.status = 'pending' ORDER BY r.created_at DESC LIMIT 100`).all(user.id);
+        return send(res, 200, { requests });
       }
       if (pathname === '/api/profile/visitors' && req.method === 'GET') {
         const visitors = db.prepare(`SELECT v.visited_at AS visitedAt, u.gender

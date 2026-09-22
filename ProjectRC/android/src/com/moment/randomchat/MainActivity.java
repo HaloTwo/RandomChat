@@ -72,6 +72,9 @@ public final class MainActivity extends Activity {
     private JSONArray storySequence = new JSONArray();
     private LinearLayout loungeSection, chatSection, profileSection, visitorsSection, quickBar;
     private Button loungeTab, visitorsTab, chatTab, profileTab;
+    private boolean referenceUi;
+    private LinearLayout referenceFeed, referenceActivity, referenceChats, referenceAccount, referenceAccountRows;
+    private TextView accountNameView, accountStateView;
     private volatile long lastTypingAt;
     private static final int COLOR_BG = Color.rgb(23, 23, 29);
     private static final int COLOR_PANEL = Color.rgb(36, 36, 45);
@@ -302,8 +305,13 @@ public final class MainActivity extends Activity {
         profileTab = tabButton(bottomNavigation, "♙\n내 계정", () -> selectTab("profile"));
         loungeTab.setTextSize(11); visitorsTab.setTextSize(11); chatTab.setTextSize(11); profileTab.setTextSize(11);
         screen.addView(bottomNavigation, new LinearLayout.LayoutParams(-1, -2));
-        selectTab(token.isEmpty() ? "profile" : "lounge");
-        if (!token.isEmpty()) refresh();
+        if (token.isEmpty()) {
+            selectTab("profile");
+        } else {
+            buildReferenceUi();
+            selectTab("feed");
+            refresh();
+        }
     }
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
@@ -397,6 +405,7 @@ public final class MainActivity extends Activity {
         return view;
     }
     private void selectTab(String tab) {
+        if (referenceUi) { selectReferenceTab(tab); return; }
         // 계정 생성 전에는 앱 기능 화면을 열지 않고 연결 설정으로 돌린다.
         if (token.isEmpty() && !"profile".equals(tab)) tab = "profile";
         boolean lounge = "lounge".equals(tab);
@@ -412,6 +421,173 @@ public final class MainActivity extends Activity {
         styleTab(chatTab, chat);
         styleTab(profileTab, !lounge && !visitors && !chat);
         if (visitors) refreshVisitors();
+    }
+
+    // 참고 화면의 정보 구조대로 피드·활동·대화 목록·내 프로필을 한 화면 껍데기에서 전환한다.
+    private void buildReferenceUi() {
+        referenceUi = true;
+        LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(COLOR_BG);
+        ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); scroll.setBackgroundColor(COLOR_BG);
+        LinearLayout pages = new LinearLayout(this); pages.setOrientation(LinearLayout.VERTICAL); pages.setPadding(dp(14), dp(8), dp(14), dp(8)); scroll.addView(pages);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        referenceFeed = referencePanel(pages);
+        LinearLayout feedTop = referenceHeader("●", "", "게시물", "◉", () -> showVisitorsScreen());
+        feedTop.getChildAt(0).setOnClickListener(view -> refresh()); referenceFeed.addView(feedTop);
+        HorizontalScrollView storyScroll = new HorizontalScrollView(this); storyScroll.setHorizontalScrollBarEnabled(false);
+        storiesView = new LinearLayout(this); storiesView.setOrientation(LinearLayout.HORIZONTAL); storyScroll.addView(storiesView);
+        referenceFeed.addView(storyScroll, new LinearLayout.LayoutParams(-1, dp(106)));
+        TextView notice = new TextView(this); notice.setText("새로운 이야기를 남기고, 익명으로 대화를 시작해요."); notice.setTextColor(COLOR_TEXT); notice.setTextSize(16); notice.setPadding(dp(16), dp(14), dp(16), dp(14)); notice.setBackground(round(COLOR_FIELD, 16));
+        LinearLayout.LayoutParams noticeParams = new LinearLayout.LayoutParams(-1, -2); noticeParams.setMargins(0, dp(6), 0, dp(8)); referenceFeed.addView(notice, noticeParams);
+        postsView = column(referenceFeed);
+        LinearLayout homeActions = new LinearLayout(this); homeActions.setGravity(Gravity.CENTER_VERTICAL); homeActions.setPadding(0, dp(12), 0, dp(4));
+        Button match = compactButton("⌕", this::showRandomMatchDialog); match.setTextSize(27); match.setTextColor(COLOR_BG); match.setBackground(round(COLOR_BLUE, 28)); homeActions.addView(match, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        homeActions.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1f));
+        Button create = compactButton("＋", this::showComposerChoice); create.setTextSize(30); create.setTextColor(COLOR_BG); create.setBackground(round(COLOR_BLUE, 28)); homeActions.addView(create, new LinearLayout.LayoutParams(dp(56), dp(56))); referenceFeed.addView(homeActions);
+
+        referenceActivity = referencePanel(pages);
+        referenceActivity.addView(referenceHeader("", "", "활동", "", null));
+        addReferenceRow(referenceActivity, "내 글 · 내 댓글", "내가 남긴 게시물과 댓글", this::showMyActivity);
+        addReferenceRow(referenceActivity, "받은 쪽지", "게시물과 스토리로 받은 쪽지", this::showInbox);
+
+        referenceChats = referencePanel(pages);
+        LinearLayout chatTop = new LinearLayout(this); chatTop.setGravity(Gravity.CENTER_VERTICAL); chatTop.setPadding(0, dp(2), 0, dp(8));
+        TextView chatTitle = new TextView(this); chatTitle.setText("대화"); chatTitle.setTextColor(COLOR_TEXT); chatTitle.setTextSize(24); chatTitle.setTypeface(null, Typeface.BOLD); chatTop.addView(chatTitle, new LinearLayout.LayoutParams(0, dp(50), 1f));
+        Button visitors = compactButton("◉", this::showVisitorsScreen); visitors.setTextSize(22); visitors.setBackgroundColor(Color.TRANSPARENT); chatTop.addView(visitors, new LinearLayout.LayoutParams(dp(46), dp(50)));
+        Button requests = compactButton("ϟ", this::showReceivedRequestsScreen); requests.setTextSize(24); requests.setBackgroundColor(Color.TRANSPARENT); chatTop.addView(requests, new LinearLayout.LayoutParams(dp(46), dp(50)));
+        Button settings = compactButton("⚙", this::showSettingsScreen); settings.setTextSize(21); settings.setBackgroundColor(Color.TRANSPARENT); chatTop.addView(settings, new LinearLayout.LayoutParams(dp(46), dp(50)));
+        referenceChats.addView(chatTop);
+        roomsView = column(referenceChats);
+
+        referenceAccount = referencePanel(pages);
+        referenceAccount.addView(referenceHeader("", "", "내 프로필", "⚙", this::showSettingsScreen));
+        LinearLayout profileCard = new LinearLayout(this); profileCard.setGravity(Gravity.CENTER_VERTICAL); profileCard.setPadding(dp(16), dp(16), dp(16), dp(16)); profileCard.setBackground(round(COLOR_FIELD, 20));
+        TextView avatar = new TextView(this); avatar.setText("●"); avatar.setTextSize(34); avatar.setTextColor(COLOR_BLUE); avatar.setGravity(Gravity.CENTER); avatar.setBackground(round(COLOR_PANEL, 34)); profileCard.addView(avatar, new LinearLayout.LayoutParams(dp(68), dp(68)));
+        LinearLayout profileText = new LinearLayout(this); profileText.setOrientation(LinearLayout.VERTICAL); profileText.setPadding(dp(14), 0, 0, 0);
+        accountNameView = new TextView(this); accountNameView.setText("내 프로필"); accountNameView.setTextColor(COLOR_TEXT); accountNameView.setTextSize(20); accountNameView.setTypeface(null, Typeface.BOLD); profileText.addView(accountNameView);
+        accountStateView = new TextView(this); accountStateView.setText("프로필 수정"); accountStateView.setTextColor(COLOR_MUTED); accountStateView.setTextSize(14); profileText.addView(accountStateView);
+        profileCard.addView(profileText, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView arrow = new TextView(this); arrow.setText("›"); arrow.setTextColor(COLOR_TEXT); arrow.setTextSize(34); profileCard.addView(arrow);
+        profileCard.setOnClickListener(view -> showProfileEditor()); referenceAccount.addView(profileCard);
+        referenceAccountRows = column(referenceAccount);
+        addReferenceRow(referenceAccountRows, "내 프로필 조회자", "내 프로필을 확인한 사용자", this::showVisitorsScreen);
+        addReferenceToggle(referenceAccountRows, "접속 시간 비공개", "presencePrivate");
+        addReferenceToggle(referenceAccountRows, "위치 비공개", "locationPrivate");
+        addReferenceToggle(referenceAccountRows, "나이 비공개", "agePrivate");
+        addReferenceRow(referenceAccountRows, "프로필 사진 관리", "연결 수락 뒤 상대에게 공개", this::pickProfilePhoto);
+        ownProfilePhotosView = column(referenceAccountRows);
+
+        // 이전 미디어 흐름이 호출돼도 UI 상태가 깨지지 않도록 비표시 컨테이너를 유지한다.
+        messagesView = new LinearLayout(this); photosView = new LinearLayout(this); videosView = new LinearLayout(this); peerProfilePhotosView = new LinearLayout(this);
+        visitorsSection = new LinearLayout(this); visitorsView = new LinearLayout(this);
+        loungeSection = referenceFeed; chatSection = referenceChats; profileSection = referenceAccount; quickBar = new LinearLayout(this);
+        statusView = accountStateView;
+
+        LinearLayout bottom = new LinearLayout(this); bottom.setGravity(Gravity.CENTER); bottom.setPadding(dp(10), dp(5), dp(10), dp(9)); bottom.setBackground(round(COLOR_PANEL, 28));
+        loungeTab = tabButton(bottom, "▤\n게시물", () -> selectTab("feed"));
+        visitorsTab = tabButton(bottom, "♥\n활동", () -> selectTab("activity"));
+        chatTab = tabButton(bottom, "●\n대화", () -> selectTab("chat"));
+        profileTab = tabButton(bottom, "♙\n프로필", () -> selectTab("profile"));
+        loungeTab.setTextSize(11); visitorsTab.setTextSize(11); chatTab.setTextSize(11); profileTab.setTextSize(11);
+        root.addView(bottom, new LinearLayout.LayoutParams(-1, -2));
+        setContentView(root);
+        refreshAccountHeader();
+    }
+
+    private LinearLayout referencePanel(LinearLayout parent) {
+        LinearLayout panel = new LinearLayout(this); panel.setOrientation(LinearLayout.VERTICAL); panel.setBackgroundColor(COLOR_BG); parent.addView(panel, new LinearLayout.LayoutParams(-1, -2)); return panel;
+    }
+    private LinearLayout referenceHeader(String left, String unused, String title, String right, Runnable rightAction) {
+        LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(0, dp(2), 0, dp(6));
+        Button leftButton = compactButton(left, () -> { }); leftButton.setTextSize(22); leftButton.setBackgroundColor(Color.TRANSPARENT); row.addView(leftButton, new LinearLayout.LayoutParams(dp(48), dp(50)));
+        TextView text = new TextView(this); text.setText(title); text.setTextColor(COLOR_TEXT); text.setTextSize(23); text.setTypeface(null, Typeface.BOLD); text.setGravity(Gravity.CENTER); row.addView(text, new LinearLayout.LayoutParams(0, dp(50), 1f));
+        Button rightButton = compactButton(right, rightAction == null ? () -> { } : rightAction); rightButton.setTextSize(22); rightButton.setBackgroundColor(Color.TRANSPARENT); row.addView(rightButton, new LinearLayout.LayoutParams(dp(48), dp(50)));
+        return row;
+    }
+    private void selectReferenceTab(String tab) {
+        String selected = "lounge".equals(tab) ? "feed" : tab;
+        if ("visitors".equals(selected)) { showVisitorsScreen(); return; }
+        boolean feed = "feed".equals(selected), activity = "activity".equals(selected), chat = "chat".equals(selected);
+        referenceFeed.setVisibility(feed ? View.VISIBLE : View.GONE); referenceActivity.setVisibility(activity ? View.VISIBLE : View.GONE); referenceChats.setVisibility(chat ? View.VISIBLE : View.GONE); referenceAccount.setVisibility(!feed && !activity && !chat ? View.VISIBLE : View.GONE);
+        styleTab(loungeTab, feed); styleTab(visitorsTab, activity); styleTab(chatTab, chat); styleTab(profileTab, !feed && !activity && !chat);
+    }
+    private void addReferenceRow(LinearLayout parent, String title, String detail, Runnable action) {
+        LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(dp(16), dp(12), dp(14), dp(12)); row.setBackground(round(COLOR_FIELD, 18));
+        LinearLayout text = new LinearLayout(this); text.setOrientation(LinearLayout.VERTICAL);
+        TextView titleView = new TextView(this); titleView.setText(title); titleView.setTextColor(COLOR_TEXT); titleView.setTextSize(17); titleView.setTypeface(null, Typeface.BOLD); text.addView(titleView);
+        if (!detail.isEmpty()) { TextView detailView = new TextView(this); detailView.setText(detail); detailView.setTextColor(COLOR_MUTED); detailView.setTextSize(13); detailView.setPadding(0, dp(3), 0, 0); text.addView(detailView); }
+        row.addView(text, new LinearLayout.LayoutParams(0, -2, 1f)); TextView arrow = new TextView(this); arrow.setText("›"); arrow.setTextColor(COLOR_TEXT); arrow.setTextSize(28); row.addView(arrow);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.topMargin = dp(8); parent.addView(row, params); row.setOnClickListener(view -> action.run());
+    }
+    private void addReferenceToggle(LinearLayout parent, String title, String key) {
+        LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(dp(16), dp(13), dp(14), dp(13)); row.setBackground(round(COLOR_FIELD, 18));
+        TextView label = new TextView(this); label.setText(title); label.setTextColor(COLOR_TEXT); label.setTextSize(17); label.setTypeface(null, Typeface.BOLD); row.addView(label, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        TextView toggle = new TextView(this); toggle.setGravity(Gravity.CENTER); toggle.setTextSize(13); row.addView(toggle, new LinearLayout.LayoutParams(dp(66), dp(38)));
+        Runnable update = () -> { boolean enabled = getPreferences(MODE_PRIVATE).getBoolean(key, false); toggle.setText(enabled ? "ON" : "OFF"); toggle.setTextColor(enabled ? COLOR_BG : COLOR_TEXT); toggle.setBackground(round(enabled ? COLOR_BLUE : COLOR_PANEL, 19)); };
+        update.run(); row.setOnClickListener(view -> { boolean enabled = getPreferences(MODE_PRIVATE).getBoolean(key, false); getPreferences(MODE_PRIVATE).edit().putBoolean(key, !enabled).apply(); update.run(); });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.topMargin = dp(8); parent.addView(row, params);
+    }
+    private LinearLayout auxiliaryRoot(String title, final android.app.Dialog[] dialog) {
+        LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(14), dp(10), dp(14), dp(10)); root.setBackgroundColor(COLOR_BG);
+        LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
+        Button close = compactButton("‹", () -> { }); close.setTextSize(34); close.setBackgroundColor(Color.TRANSPARENT); header.addView(close, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        TextView heading = new TextView(this); heading.setText(title); heading.setTextColor(COLOR_TEXT); heading.setTextSize(21); heading.setTypeface(null, Typeface.BOLD); heading.setGravity(Gravity.CENTER); header.addView(heading, new LinearLayout.LayoutParams(0, dp(52), 1f));
+        header.addView(new View(this), new LinearLayout.LayoutParams(dp(52), dp(52))); root.addView(header);
+        close.setOnClickListener(view -> { if (dialog[0] != null) dialog[0].dismiss(); }); return root;
+    }
+    private void showVisitorsScreen() {
+        background(() -> {
+            JSONArray visitors = json("GET", "/api/profile/visitors", null).optJSONArray("visitors");
+            runOnUiThread(() -> {
+                final android.app.Dialog[] dialog = new android.app.Dialog[1]; LinearLayout root = auxiliaryRoot("프로필 방문자", dialog);
+                ScrollView scroll = new ScrollView(this); LinearLayout list = new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL); list.setPadding(dp(8), dp(20), dp(8), dp(8)); scroll.addView(list);
+                if (visitors == null || visitors.length() == 0) { TextView empty = label(list, "아직 방문자가 없어요\n누군가 내 프로필을 보면 여기에 표시돼요."); empty.setTextSize(17); empty.setGravity(Gravity.CENTER); empty.setPadding(0, dp(180), 0, 0); }
+                else for (int i = 0; i < visitors.length(); i++) { JSONObject visitor = visitors.optJSONObject(i); if (visitor == null) continue;
+                    LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(dp(10), dp(12), dp(8), dp(12));
+                    TextView avatar = new TextView(this); avatar.setText("●"); avatar.setTextColor("male".equals(visitor.optString("gender")) ? COLOR_BLUE : COLOR_PINK); avatar.setTextSize(30); avatar.setGravity(Gravity.CENTER); row.addView(avatar, new LinearLayout.LayoutParams(dp(54), dp(54)));
+                    TextView description = new TextView(this); description.setText("내 프로필을 확인했어요\n" + relativeTime(visitor.optLong("visitedAt"))); description.setTextColor(COLOR_TEXT); description.setTextSize(16); row.addView(description, new LinearLayout.LayoutParams(0, -2, 1f)); list.addView(row);
+                }
+                root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f)); dialog[0] = fullScreenDialog(root);
+            });
+        });
+    }
+    private void showReceivedRequestsScreen() {
+        background(() -> {
+            JSONArray requests = json("GET", "/api/requests/received", null).optJSONArray("requests");
+            runOnUiThread(() -> {
+                final android.app.Dialog[] dialog = new android.app.Dialog[1]; LinearLayout root = auxiliaryRoot("받은 채팅 요청", dialog);
+                ScrollView scroll = new ScrollView(this); LinearLayout list = new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL); list.setPadding(dp(8), dp(16), dp(8), dp(8)); scroll.addView(list);
+                if (requests == null || requests.length() == 0) { TextView empty = label(list, "받은 채팅 요청이 없어요."); empty.setTextSize(17); empty.setGravity(Gravity.CENTER); empty.setPadding(0, dp(180), 0, 0); }
+                else for (int i = 0; i < requests.length(); i++) { JSONObject request = requests.optJSONObject(i); if (request == null) continue;
+                    String room = request.optString("roomId"); LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.VERTICAL); row.setPadding(dp(14), dp(14), dp(14), dp(12)); row.setBackground(round(COLOR_FIELD, 18));
+                    LinearLayout first = new LinearLayout(this); first.setGravity(Gravity.CENTER_VERTICAL); TextView avatar = new TextView(this); avatar.setText("●"); avatar.setTextColor("male".equals(request.optString("gender")) ? COLOR_BLUE : COLOR_PINK); avatar.setTextSize(28); first.addView(avatar, new LinearLayout.LayoutParams(dp(42), dp(40)));
+                    TextView name = new TextView(this); name.setText(request.optString("nickname", "익명 사용자")); name.setTextColor(COLOR_TEXT); name.setTextSize(17); name.setTypeface(null, Typeface.BOLD); first.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
+                    TextView time = new TextView(this); time.setText(relativeTime(request.optLong("createdAt"))); time.setTextColor(COLOR_MUTED); time.setTextSize(12); first.addView(time); row.addView(first);
+                    TextView message = new TextView(this); message.setText("계속 대화하고 싶어요."); message.setTextColor(COLOR_TEXT); message.setTextSize(15); message.setPadding(dp(42), dp(4), 0, dp(10)); row.addView(message);
+                    LinearLayout actions = new LinearLayout(this); actions.setGravity(Gravity.RIGHT); Button reject = compactButton("거절", () -> background(() -> { json("POST", "/api/rooms/" + room + "/request/decision", new JSONObject().put("decision", "reject")); runOnUiThread(() -> { dialog[0].dismiss(); showReceivedRequestsScreen(); }); })); Button accept = compactButton("수락", () -> background(() -> { json("POST", "/api/rooms/" + room + "/request/decision", new JSONObject().put("decision", "accept")); runOnUiThread(() -> { dialog[0].dismiss(); selectTab("chat"); showRoomConversation(room); }); refresh(); })); accept.setTextColor(COLOR_BG); accept.setBackground(round(COLOR_BLUE, 14)); actions.addView(reject, new LinearLayout.LayoutParams(dp(78), dp(42))); actions.addView(accept, new LinearLayout.LayoutParams(dp(78), dp(42))); row.addView(actions);
+                    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.topMargin = dp(8); list.addView(row, params);
+                }
+                root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f)); dialog[0] = fullScreenDialog(root);
+            });
+        });
+    }
+    private void showSettingsScreen() {
+        final android.app.Dialog[] dialog = new android.app.Dialog[1]; LinearLayout root = auxiliaryRoot("설정", dialog); ScrollView scroll = new ScrollView(this); LinearLayout list = new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL); list.setPadding(dp(8), dp(8), dp(8), dp(20)); scroll.addView(list);
+        settingsGroup(list, "알림"); addReferenceToggle(list, "대화 알림", "chatNotifications");
+        settingsGroup(list, "앱 설정"); addReferenceRow(list, "서버 연결", "현재 서버 주소를 확인하거나 바꿉니다", this::showConnectionSettings);
+        settingsGroup(list, "계정"); addReferenceRow(list, "계정 교체", "이 기기의 테스트 계정을 바꿉니다", () -> { if (dialog[0] != null) dialog[0].dismiss(); token = ""; roomId = ""; getPreferences(MODE_PRIVATE).edit().remove(PREF_TOKEN).apply(); recreate(); });
+        settingsGroup(list, "정보"); addReferenceRow(list, "커뮤니티 가이드라인", "안전한 대화를 위한 기준", () -> notice("커뮤니티 가이드라인은 준비 중입니다."));
+        TextView version = new TextView(this); version.setText("앱 버전 0.2"); version.setTextColor(COLOR_MUTED); version.setTextSize(14); version.setPadding(dp(16), dp(18), dp(16), dp(10)); list.addView(version);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f)); dialog[0] = fullScreenDialog(root);
+    }
+    private void settingsGroup(LinearLayout parent, String name) { TextView group = new TextView(this); group.setText(name); group.setTextColor(COLOR_MUTED); group.setTextSize(14); group.setTypeface(null, Typeface.BOLD); group.setPadding(dp(8), dp(18), 0, dp(3)); parent.addView(group); }
+    private void showProfileEditor() {
+        EditText nickname = dialogInput("닉네임", false); nickname.setText(accountNameView == null ? "" : accountNameView.getText());
+        new android.app.AlertDialog.Builder(this).setTitle("프로필 수정").setView(nickname).setNegativeButton("취소", null).setPositiveButton("저장", (d, w) -> background(() -> { json("PATCH", "/api/profile", new JSONObject().put("nickname", nickname.getText().toString().trim()).put("intro", "")); refreshAccountHeader(); })).show();
+    }
+    private void refreshAccountHeader() {
+        if (token.isEmpty()) return;
+        background(() -> { JSONObject me = json("GET", "/api/me", null).optJSONObject("user"); runOnUiThread(() -> { if (me != null && accountNameView != null) { accountNameView.setText(me.optString("nickname", "내 프로필")); if (accountStateView != null) accountStateView.setText("프로필 수정"); } }); });
     }
     private void styleTab(Button view, boolean selected) {
         view.setTextColor(selected ? Color.rgb(20, 35, 44) : COLOR_TEXT);
@@ -811,6 +987,16 @@ public final class MainActivity extends Activity {
 
     // 피드에는 핵심 정보만 두고, 누르면 상세 화면에서 본문과 댓글을 이어서 읽는다.
     private void addPostCard(JSONObject post) {
+        if (referenceUi) {
+            LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.VERTICAL); row.setPadding(dp(12), dp(16), dp(12), dp(15));
+            String title = post.optString("title").trim(), body = post.optString("body").trim();
+            TextView titleView = new TextView(this); titleView.setText(title.isEmpty() ? body : title); titleView.setTextColor(COLOR_TEXT); titleView.setTextSize(21); titleView.setTypeface(null, Typeface.BOLD); row.addView(titleView);
+            if (!title.isEmpty()) { TextView preview = new TextView(this); preview.setText(body); preview.setTextColor(COLOR_TEXT); preview.setTextSize(16); preview.setMaxLines(2); preview.setPadding(0, dp(8), 0, 0); row.addView(preview); }
+            TextView author = new TextView(this); author.setText(("male".equals(post.optString("gender")) ? "• " : "• ") + relativeTime(post.optLong("createdAt"))); author.setTextColor(COLOR_MUTED); author.setTextSize(13); author.setPadding(0, dp(12), 0, dp(8)); row.addView(author);
+            TextView stats = new TextView(this); stats.setText("◉  " + post.optInt("viewCount") + "                         ◌  " + post.optInt("commentCount")); stats.setTextColor(COLOR_TEXT); stats.setTextSize(15); row.addView(stats);
+            View divider = new View(this); divider.setBackgroundColor(COLOR_FIELD); LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, dp(1)); dividerParams.topMargin = dp(14); row.addView(divider, dividerParams);
+            postsView.addView(row, new LinearLayout.LayoutParams(-1, -2)); row.setOnClickListener(view -> openPost(post)); return;
+        }
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(12), dp(16), dp(12));
@@ -930,6 +1116,20 @@ public final class MainActivity extends Activity {
     }
 
     private void addRoomCard(JSONObject room, Runnable action) {
+        if (referenceUi) {
+            LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(dp(10), dp(10), dp(8), dp(10));
+            JSONObject peer = room.optJSONObject("peer");
+            TextView avatar = new TextView(this); avatar.setText("●"); avatar.setTextColor(peer != null && "male".equals(peer.optString("gender")) ? COLOR_BLUE : COLOR_PINK); avatar.setTextSize(34); avatar.setGravity(Gravity.CENTER); avatar.setBackground(round(COLOR_PANEL, 30)); row.addView(avatar, new LinearLayout.LayoutParams(dp(60), dp(60)));
+            LinearLayout text = new LinearLayout(this); text.setOrientation(LinearLayout.VERTICAL); text.setPadding(dp(12), 0, dp(8), 0);
+            String name = peer == null ? "대화 상대" : peer.optString("displayName", "대화 상대");
+            TextView nameView = new TextView(this); nameView.setText(name); nameView.setTextColor(COLOR_TEXT); nameView.setTextSize(17); nameView.setTypeface(null, Typeface.BOLD); text.addView(nameView);
+            String preview = room.optString("lastMessage"); if (preview.isEmpty()) preview = "random".equals(room.optString("status")) ? "랜덤 대화가 시작됐어요" : "대화를 시작해 보세요.";
+            TextView previewView = new TextView(this); previewView.setText(preview); previewView.setTextColor(COLOR_MUTED); previewView.setTextSize(14); previewView.setSingleLine(true); previewView.setPadding(0, dp(4), 0, 0); text.addView(previewView);
+            row.addView(text, new LinearLayout.LayoutParams(0, -2, 1f));
+            LinearLayout side = new LinearLayout(this); side.setOrientation(LinearLayout.VERTICAL); side.setGravity(Gravity.RIGHT); TextView time = new TextView(this); time.setText(relativeTime(room.optLong("lastMessageAt", room.optLong("createdAt")))); time.setTextColor(COLOR_MUTED); time.setTextSize(11); side.addView(time);
+            if (room.optInt("unreadCount") > 0) { TextView unread = new TextView(this); unread.setText(String.valueOf(room.optInt("unreadCount"))); unread.setTextColor(COLOR_BG); unread.setTextSize(11); unread.setGravity(Gravity.CENTER); unread.setBackground(round(COLOR_PINK, 12)); LinearLayout.LayoutParams unreadParams = new LinearLayout.LayoutParams(dp(24), dp(24)); unreadParams.topMargin = dp(5); side.addView(unread, unreadParams); }
+            row.addView(side, new LinearLayout.LayoutParams(dp(54), dp(60))); LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(82)); roomsView.addView(row, params); row.setOnClickListener(view -> action.run()); return;
+        }
         LinearLayout card = new LinearLayout(this); card.setOrientation(LinearLayout.HORIZONTAL); card.setGravity(Gravity.CENTER_VERTICAL); card.setPadding(dp(16), dp(12), dp(16), dp(12)); card.setBackground(round(COLOR_FIELD, 16));
         TextView icon = new TextView(this); icon.setText("●"); icon.setTextSize(22); icon.setTextColor("connected".equals(room.optString("status")) ? COLOR_BLUE : COLOR_PINK); card.addView(icon, new LinearLayout.LayoutParams(dp(30), -2));
         TextView detail = new TextView(this); detail.setText("connected".equals(room.optString("status")) ? "계속 대화 중" : ("ended".equals(room.optString("status")) ? "종료된 대화" : "랜덤 대화")); detail.setTextColor(COLOR_TEXT); detail.setTextSize(16); detail.setTypeface(null, Typeface.BOLD); card.addView(detail, new LinearLayout.LayoutParams(0, -2, 1f));
