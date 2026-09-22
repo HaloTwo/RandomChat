@@ -52,8 +52,9 @@ test('공기계 APK 다운로드는 파일 바이트를 그대로 전달하고 �
 test('라운지 플래그는 Android가 읽을 수 있는 boolean이다', async () => withApp(async ({ app, call, user }) => {
   const a = await user('작성자'), b = await user('독자');
   const post = (await call('/api/posts', 'POST', { body: '본문' }, a.token)).data;
-  await call('/api/stories', 'POST', { body: '스토리' }, a.token);
+  const storyCreated = (await call('/api/stories', 'POST', { body: '스토리' }, a.token)).data;
   app.db.prepare('UPDATE posts SET image=? WHERE id=?').run(Buffer.from('fixture'), post.id);
+  app.db.prepare('UPDATE stories SET image=? WHERE id=?').run(Buffer.from('fixture'), storyCreated.id);
   const own = (await call('/api/feed', 'GET', null, a.token)).data.posts[0];
   assert.equal(own.mine, true);
   assert.equal(own.hasImage, true);
@@ -61,7 +62,7 @@ test('라운지 플래그는 Android가 읽을 수 있는 boolean이다', async 
   assert.equal(other.mine, false);
   const story = (await call('/api/stories', 'GET', null, a.token)).data.stories[0];
   assert.equal(story.mine, true);
-  assert.equal(story.hasImage, false);
+  assert.equal(story.hasImage, true);
 }));
 
 test('공개 라운지는 익명 번호·성별만 보여 주고 댓글과 쪽지를 전달한다', async () => withApp(async ({ call, user }) => {
@@ -113,6 +114,7 @@ test('로그인한 사용자끼리만 게시물과 24시간 스토리를 보고 
   const story = await call('/api/stories', 'POST', { body: '잠깐 남기는 이야기' }, a.token);
   assert.equal(post.status, 201);
   assert.equal(story.status, 201);
+  app.db.prepare('UPDATE stories SET image=? WHERE id=?').run(Buffer.from('fixture'), story.data.id);
   assert.equal((await call('/api/feed', 'GET', null, b.token)).data.posts[0].body, '오늘 만든 화면 공유');
   assert.equal((await call('/api/stories', 'GET', null, b.token)).data.stories[0].body, '잠깐 남기는 이야기');
   assert.equal((await call(`/api/posts/${post.data.id}`, 'DELETE', null, b.token)).status, 404);

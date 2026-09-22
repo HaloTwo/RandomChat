@@ -19,6 +19,7 @@ let stories = [];
 let online = { count: 0, users: [] };
 let inbox = [];
 let activePostId = null;
+let activeStory = null;
 let socialUrls = [];
 let socialSignature = '';
 let socialGeneration = 0;
@@ -98,10 +99,9 @@ async function socialImage(path, alt) {
 
 async function refreshSocial() {
   if (!token) return;
-  const [feedResult, storyResult, onlineResult, inboxResult] = await Promise.all([api('/api/feed'), api('/api/stories'), api('/api/online'), api('/api/inbox')]);
+  const [feedResult, storyResult, inboxResult] = await Promise.all([api('/api/feed'), api('/api/stories'), api('/api/inbox')]);
   feed = feedResult.posts;
   stories = storyResult.stories;
-  online = onlineResult;
   inbox = inboxResult.notes;
 }
 
@@ -145,7 +145,6 @@ function render() {
   renderRoomList();
   renderRoom();
   renderSocial();
-  renderOnline();
   renderInbox();
 }
 
@@ -163,7 +162,8 @@ function renderSocial() {
     const body = document.createElement('p'); body.textContent = item.body;
     const time = document.createElement('small'); time.textContent = `${formatTime(item.createdAt)} · 24시간 후 사라짐`;
     card.append(name, body);
-    if (item.hasImage) socialImage(`/api/stories/${item.id}/image`, '익명 스토리 사진').then(image => { if (image && card.isConnected) card.insertBefore(image, time); }).catch(error => flash(error.message));
+    card.addEventListener('click', () => openStory(item));
+    socialImage(`/api/stories/${item.id}/image`, '익명 스토리 사진').then(image => { if (image && card.isConnected) card.insertBefore(image, time); }).catch(error => flash(error.message));
     if (item.mine) { const remove = document.createElement('button'); remove.className = 'text-button danger'; remove.textContent = '삭제'; remove.addEventListener('click', () => act(`/api/stories/${item.id}`, 'DELETE')); card.append(remove); }
     card.append(time); storyList.append(card);
   }
@@ -175,11 +175,13 @@ function renderSocial() {
     const meta = document.createElement('div'); meta.className = 'post-meta';
     const name = document.createElement('b'); name.className = `gender-${item.gender || 'unknown'}`; name.textContent = item.anonymousLabel || '익명 사용자';
     const time = document.createElement('small'); time.textContent = formatTime(item.createdAt); meta.append(name, time);
-    const body = document.createElement('p'); body.textContent = item.body;
+    const title = document.createElement('h3'); title.textContent = item.title || '익명 이야기';
+    const body = document.createElement('p'); body.className = 'post-preview'; body.textContent = item.body;
     const more = document.createElement('button');
     more.type = 'button'; more.className = 'more-button'; more.textContent = '⋯'; more.setAttribute('aria-label', '게시물 메뉴');
     more.addEventListener('click', () => openPostDialog(item.id));
-    meta.append(more); card.append(meta, body);
+    meta.append(more); card.append(meta, title, body);
+    card.addEventListener('click', event => { if (!event.target.closest('button')) openPostDialog(item.id); });
     if (item.hasImage) socialImage(`/api/posts/${item.id}/image`, '익명 게시물 사진').then(image => { if (image && card.isConnected) card.append(image); }).catch(error => flash(error.message));
     if (item.mine) { const remove = document.createElement('button'); remove.className = 'text-button danger'; remove.textContent = '내 게시물 삭제'; remove.addEventListener('click', () => act(`/api/posts/${item.id}`, 'DELETE')); card.append(remove); }
     feedList.append(card);
@@ -216,16 +218,16 @@ async function openPostDialog(postId) {
   } catch (error) { $('post-comments').textContent = error.message; }
 }
 
-function renderOnline() {
-  $('online-count').textContent = online.count || 0;
-  const list = $('online-list');
-  list.replaceChildren();
-  if (!online.users?.length) { list.textContent = '지금 표시할 접속자가 없습니다.'; return; }
-  for (const user of online.users) {
-    const item = document.createElement('span');
-    item.textContent = user.anonymousLabel || '익명 사용자';
-    list.append(item);
-  }
+async function openStory(item) {
+  activeStory = item;
+  $('story-dialog-author').textContent = item.anonymousLabel || '익명 사용자';
+  $('story-dialog-body').textContent = item.body;
+  $('story-actions').classList.add('hidden');
+  $('story-dialog').showModal();
+  try {
+    const image = await socialImage(`/api/stories/${item.id}/image`, '스토리 사진');
+    if (activeStory?.id === item.id && image) $('story-dialog-image').src = image.src;
+  } catch (error) { flash(error.message); }
 }
 
 function renderRoomList() {
@@ -356,6 +358,25 @@ $('join-form').addEventListener('submit', async event => {
 $('match-btn').addEventListener('click', () => $('match-dialog').showModal());
 $('match-dialog-cancel').addEventListener('click', () => $('match-dialog').close());
 $('match-confirm').addEventListener('click', () => { $('match-dialog').close(); act('/api/queue'); });
+$('story-dialog-close').addEventListener('click', () => $('story-dialog').close());
+$('story-more').addEventListener('click', () => $('story-actions').classList.toggle('hidden'));
+$('story-note').addEventListener('click', async () => {
+  const body = prompt('익명 쪽지 내용');
+  if (!body?.trim() || !activeStory) return;
+  try { await api(`/api/stories/${activeStory.id}/message`, 'POST', { body: body.trim() }); flash('익명 쪽지를 보냈습니다.'); }
+  catch (error) { flash(error.message); }
+});
+$('story-block').addEventListener('click', async () => {
+  if (!activeStory || !confirm('이 스토리 작성자를 차단할까요?')) return;
+  try { await api(`/api/stories/${activeStory.id}/block`, 'POST'); $('story-dialog').close(); await refresh(); flash('차단했습니다.'); }
+  catch (error) { flash(error.message); }
+});
+$('story-report').addEventListener('click', async () => {
+  const reason = prompt('신고 사유');
+  if (!reason?.trim() || !activeStory) return;
+  try { await api(`/api/stories/${activeStory.id}/report`, 'POST', { reason: reason.trim() }); flash('신고를 접수했습니다.'); }
+  catch (error) { flash(error.message); }
+});
 $('post-dialog-close').addEventListener('click', () => $('post-dialog').close());
 $('send-comment').addEventListener('click', async () => {
   const body = $('post-action-body').value.trim(); if (!activePostId || !body) return;
@@ -371,17 +392,17 @@ $('cancel-btn').addEventListener('click', () => act('/api/queue', 'DELETE'));
 $('refresh-feed').addEventListener('click', async () => { try { await refreshSocial(); renderSocial(); } catch (error) { flash(error.message); } });
 $('post-form').addEventListener('submit', async event => {
   event.preventDefault();
-  const body = $('post-input').value.trim(), file = $('post-image').files[0];
-  if (!body) return;
+  const title = $('post-title').value.trim(), body = $('post-input').value.trim(), file = $('post-image').files[0];
+  if (!title || !body) return;
   const button = $('post-form').querySelector('button'); button.disabled = true;
   try {
     if (file && (!['image/jpeg','image/png'].includes(file.type) || file.size > 5 * 1024 * 1024)) throw new Error('사진은 5MB 이하 JPEG/PNG를 선택하세요.');
     const saved = pendingPosts.posts;
-    const created = saved && saved.body === body && saved.token === token ? saved : await api('/api/posts', 'POST', { body });
-    pendingPosts.posts = { id: created.id, body, token };
+    const created = saved && saved.body === body && saved.title === title && saved.token === token ? saved : await api('/api/posts', 'POST', { title, body });
+    pendingPosts.posts = { id: created.id, title, body, token };
     await uploadPhoto(`/api/posts/${created.id}/image`, file);
     delete pendingPosts.posts;
-    $('post-input').value = ''; $('post-image').value = '';
+    $('post-title').value = ''; $('post-input').value = ''; $('post-image').value = '';
     await refreshSocial(); renderSocial(); flash('게시물을 올렸습니다.');
   } catch (error) { flash(error.message); }
   finally { button.disabled = false; }
@@ -389,7 +410,7 @@ $('post-form').addEventListener('submit', async event => {
 $('story-form').addEventListener('submit', async event => {
   event.preventDefault();
   const body = $('story-input').value.trim(), file = $('story-image').files[0];
-  if (!body) return;
+  if (!body || !file) { flash('스토리에는 사진을 반드시 추가하세요.'); return; }
   const button = $('story-form').querySelector('button'); button.disabled = true;
   try {
     if (file && (!['image/jpeg','image/png'].includes(file.type) || file.size > 5 * 1024 * 1024)) throw new Error('사진은 5MB 이하 JPEG/PNG를 선택하세요.');
@@ -446,6 +467,13 @@ $('report-form').addEventListener('submit', async event => { event.preventDefaul
 $('edit-profile').addEventListener('click', () => { $('edit-nickname').value = state.user.nickname; $('edit-intro').value = state.user.intro; $('profile-dialog').showModal(); });
 $('profile-cancel').addEventListener('click', () => $('profile-dialog').close());
 $('profile-form').addEventListener('submit', async event => { event.preventDefault(); try { await api('/api/profile', 'PATCH', { nickname: $('edit-nickname').value, intro: $('edit-intro').value }); $('profile-dialog').close(); await refresh(); } catch (error) { flash(error.message); } });
+$('theme-toggle').addEventListener('click', () => {
+  document.body.classList.toggle('dark');
+  const dark = document.body.classList.contains('dark');
+  localStorage.setItem('moment.dark', dark ? '1' : '0');
+  $('theme-toggle').textContent = dark ? '라이트 모드' : '다크 모드';
+});
+if (localStorage.getItem('moment.dark') === '1') { document.body.classList.add('dark'); $('theme-toggle').textContent = '라이트 모드'; }
 
 document.querySelectorAll('.nav-item').forEach(button => button.addEventListener('click', () => {
   const selected = button.dataset.tab;

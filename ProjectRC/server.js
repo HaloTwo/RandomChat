@@ -133,7 +133,7 @@ function createDatabase(dbPath) {
     );
     CREATE TABLE IF NOT EXISTS posts (
       id TEXT PRIMARY KEY, author_id TEXT NOT NULL REFERENCES users(id),
-      body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 500), anonymous_label TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 500), anonymous_label TEXT NOT NULL DEFAULT '',
       image BLOB, image_width INTEGER, image_height INTEGER,
       created_at INTEGER NOT NULL
     );
@@ -156,6 +156,11 @@ function createDatabase(dbPath) {
       body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 500), created_at INTEGER NOT NULL, read_at INTEGER
     );
     CREATE INDEX IF NOT EXISTS private_notes_receiver ON private_notes(receiver_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS social_reports (
+      id TEXT PRIMARY KEY, content_type TEXT NOT NULL CHECK(content_type IN ('posts','stories')),
+      content_id TEXT NOT NULL, reporter_id TEXT NOT NULL REFERENCES users(id), reason TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS conversation_access_audit (
       id TEXT PRIMARY KEY, reviewer_id TEXT NOT NULL REFERENCES admin_accounts(id),
       room_id TEXT NOT NULL, created_at INTEGER NOT NULL
@@ -170,6 +175,7 @@ function createDatabase(dbPath) {
   if (!userColumns.some(column => column.name === 'last_seen')) db.exec('ALTER TABLE users ADD COLUMN last_seen INTEGER');
   if (!userColumns.some(column => column.name === 'gender')) db.exec("ALTER TABLE users ADD COLUMN gender TEXT CHECK(gender IN ('male','female'))");
   const postColumns = db.prepare('PRAGMA table_info(posts)').all();
+  if (!postColumns.some(column => column.name === 'title')) db.exec("ALTER TABLE posts ADD COLUMN title TEXT NOT NULL DEFAULT ''");
   if (!postColumns.some(column => column.name === 'anonymous_label')) db.exec("ALTER TABLE posts ADD COLUMN anonymous_label TEXT NOT NULL DEFAULT ''");
   const storyColumns = db.prepare('PRAGMA table_info(stories)').all();
   if (!storyColumns.some(column => column.name === 'anonymous_label')) db.exec("ALTER TABLE stories ADD COLUMN anonymous_label TEXT NOT NULL DEFAULT ''");
@@ -528,7 +534,7 @@ function createApp(options = {}) {
         if (pathname === '/api/admin/social' && req.method === 'GET') {
           const query = String(url.searchParams.get('q') || '').trim().slice(0, 100);
           const like = `%${query.replace(/[\\%_]/g, '\\$&')}%`;
-          const posts = db.prepare(`SELECT id,body,anonymous_label AS anonymousLabel,created_at AS createdAt,image IS NOT NULL AS hasImage
+          const posts = db.prepare(`SELECT id,title,body,anonymous_label AS anonymousLabel,created_at AS createdAt,image IS NOT NULL AS hasImage
             FROM posts WHERE ? = '' OR body LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT 100`).all(query, like);
           const stories = db.prepare(`SELECT id,body,anonymous_label AS anonymousLabel,created_at AS createdAt,expires_at AS expiresAt,image IS NOT NULL AS hasImage
             FROM stories WHERE ? = '' OR body LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT 100`).all(query, like);
@@ -710,7 +716,7 @@ function createApp(options = {}) {
       }
       // 공개 피드와 스토리는 로그인한 로컬 테스트 사용자끼리만 본다. 랜덤 대화방 미디어와는 저장·권한을 분리한다.
       if ((pathname === '/api/posts' || pathname === '/api/feed') && req.method === 'GET') {
-        const posts = db.prepare(`SELECT p.id,p.body,p.anonymous_label AS anonymousLabel,u.gender,p.created_at AS createdAt,p.image IS NOT NULL AS hasImage,
+        const posts = db.prepare(`SELECT p.id,p.title,p.body,p.anonymous_label AS anonymousLabel,u.gender,p.created_at AS createdAt,p.image IS NOT NULL AS hasImage,
           p.author_id = ? AS mine
           FROM posts p JOIN users u ON u.id = p.author_id AND u.deleted_at IS NULL
           ORDER BY p.created_at DESC LIMIT 40`).all(user.id);
@@ -718,13 +724,37 @@ function createApp(options = {}) {
       }
 
       if (pathname === '/api/posts' && req.method === 'POST') {
-        const body = String((await readJson(req)).body || '').trim();
+        const requestBody = await readJson(req);
+        const title = String(requestBody.title || '').trim();
+        const body = String(requestBody.body || '').trim();
         if (!body || body.length > 500) throw httpError(400, '게시물은 1~500자로 입력하세요.');
+        if (title.length > 80) throw httpError(400, '게시물 제목은 80자 이하로 입력하세요.');
         const id = uuid();
-        db.prepare('INSERT INTO posts(id,author_id,body,anonymous_label,created_at) VALUES (?,?,?,?,?)').run(id, user.id, body, anonymousLabel(id), now);
+        db.prepare('INSERT INTO posts(id,author_id,title,body,anonymous_label,created_at) VALUES (?,?,?,?,?,?)').run(id, user.id, title || '익명 이야기', body, anonymousLabel(id), now);
         return send(res, 201, { id });
       }
       const postRoute = /^\/api\/posts\/([^/]+)(?:\/(image))?$/.exec(pathname);
+      const socialAction = /^\/api\/(posts|stories)\/([^/]+)\/(message|block|report)$/.exec(pathname);
+      if (socialAction && req.method === 'POST') {
+        const [, table, contentId, action] = socialAction;
+        const content = db.prepare(`SELECT author_id FROM ${table} WHERE id = ?`).get(contentId);
+        if (!content) throw httpError(404, '콘텐츠를 찾을 수 없습니다.');
+        if (content.author_id === user.id) throw httpError(400, '내 콘텐츠에는 이 작업을 할 수 없습니다.');
+        if (action === 'message') {
+          const body = String((await readJson(req)).body || '').trim();
+          if (!body || body.length > 500) throw httpError(400, '쪽지는 1~500자로 입력하세요.');
+          db.prepare('INSERT INTO private_notes(id,sender_id,receiver_id,body,created_at) VALUES (?,?,?,?,?)').run(uuid(), user.id, content.author_id, body, now);
+          return send(res, 201, { sent: true });
+        }
+        if (action === 'block') {
+          db.prepare('INSERT INTO blocks(user_id,target_id,created_at) VALUES (?,?,?) ON CONFLICT(user_id,target_id) DO NOTHING').run(user.id, content.author_id, now);
+          return send(res, 200, { blocked: true });
+        }
+        const reason = String((await readJson(req)).reason || '').trim();
+        if (!reason || reason.length > 500) throw httpError(400, '신고 사유는 1~500자로 입력하세요.');
+        db.prepare('INSERT INTO social_reports(id,content_type,content_id,reporter_id,reason,created_at) VALUES (?,?,?,?,?,?)').run(uuid(), table, contentId, user.id, reason, now);
+        return send(res, 201, { reported: true });
+      }
       const postCommentsRoute = /^\/api\/posts\/([^/]+)\/comments$/.exec(pathname);
       if (postCommentsRoute && req.method === 'GET') {
         const comments = db.prepare(`SELECT c.id,c.body,c.anonymous_label AS anonymousLabel,u.gender,c.created_at AS createdAt,c.author_id = ? AS mine
@@ -774,7 +804,7 @@ function createApp(options = {}) {
         const stories = db.prepare(`SELECT s.id,s.body,s.anonymous_label AS anonymousLabel,u.gender,s.created_at AS createdAt,s.expires_at AS expiresAt,s.image IS NOT NULL AS hasImage,
           s.author_id = ? AS mine
           FROM stories s JOIN users u ON u.id = s.author_id AND u.deleted_at IS NULL
-          WHERE s.expires_at > ? ORDER BY s.created_at DESC LIMIT 30`).all(user.id, now);
+          WHERE s.expires_at > ? AND s.image IS NOT NULL ORDER BY s.created_at DESC LIMIT 30`).all(user.id, now);
         return send(res, 200, { stories: stories.map(s => ({ ...s, mine: !!s.mine, hasImage: !!s.hasImage })) });
       }
       if (pathname === '/api/stories' && req.method === 'POST') {

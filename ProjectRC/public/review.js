@@ -12,6 +12,31 @@ let adminRoomId = null;
 let roomOffset = 0;
 let messageOffset = 0;
 
+async function loadAdminSocial() {
+  const query = $('admin-social-search').value.trim();
+  const data = await reviewerApi(`/api/admin/social?q=${encodeURIComponent(query)}`);
+  const list = $('admin-social');
+  list.replaceChildren();
+  const entries = [...data.stories.map(item => ({ ...item, type: '스토리' })), ...data.posts.map(item => ({ ...item, type: '게시물' }))];
+  if (!entries.length) { list.textContent = '표시할 공개 콘텐츠가 없습니다.'; return; }
+  for (const item of entries) {
+    const card = document.createElement('article'); card.className = 'review-reason';
+    const title = document.createElement('b'); title.textContent = `${item.type} · ${item.anonymousLabel || '익명 사용자'} · ${formatDate(item.createdAt)}`;
+    const body = document.createElement('p'); body.textContent = item.title ? `${item.title}\n${item.body}` : item.body;
+    card.append(title, body);
+    if (item.hasImage) {
+      const image = document.createElement('img'); image.className = 'review-photo';
+      image.alt = `${item.type} 사진`;
+      fetch(`/api/admin/${item.type === '스토리' ? 'stories' : 'posts'}/${encodeURIComponent(item.id)}/image`, { headers: { Authorization: `Bearer ${reviewerToken}` } })
+        .then(response => response.ok ? response.blob() : Promise.reject())
+        .then(blob => { if (reviewerToken) image.src = URL.createObjectURL(blob); })
+        .catch(() => image.remove());
+      card.append(image);
+    }
+    list.append(card);
+  }
+}
+
 // 인증된 관리자만 방 목록을 읽고, 선택한 방의 메시지를 200개씩 확인한다.
 async function loadRooms(reset = true) {
   if (reset) roomOffset = 0;
@@ -281,6 +306,7 @@ $('review-login-form').addEventListener('submit', async event => {
     await loadPhotos('photos');
     await loadPhotos('profile-photos');
     await loadVideos();
+    await loadAdminSocial();
     $('review-token').value = '';
     $('review-login').classList.add('hidden');
     $('review-workspace').classList.remove('hidden');
@@ -289,6 +315,7 @@ $('review-login-form').addEventListener('submit', async event => {
 $('review-refresh').addEventListener('click', () => Promise.all([loadReports(), loadPhotos('photos'), loadPhotos('profile-photos'), loadVideos()]).catch(error => showError(error.message)));
 $('review-logout').addEventListener('click', () => { clearReviewer(); clearError(); });
 $('rooms-reload').addEventListener('click', () => loadRooms().catch(error => showError(error.message)));
+$('admin-social-reload').addEventListener('click', () => loadAdminSocial().catch(error => showError(error.message)));
 $('rooms-more').addEventListener('click', () => loadRooms(false).catch(error => showError(error.message)));
 $('messages-more').addEventListener('click', () => loadMessages().catch(error => showError(error.message)));
 for (const [prefix, kind] of [['photo','photos'], ['profile-photo','profile-photos']]) {
