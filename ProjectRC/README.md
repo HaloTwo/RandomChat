@@ -103,6 +103,20 @@ http://192.168.x.x:3000/install
 3. `서버 연결 성공`이 보이면 **테스트 계정 만들기**를 누릅니다.
 4. 성공한 서버 주소와 현재 테스트 계정은 이 공기계에 저장됩니다. 다음 실행부터 바로 게시물·대화 화면을 엽니다. 새 계정이 필요할 때만 다시 만듭니다.
 
+### APK 다운로드·설치 확인
+
+공기계를 아직 연결하지 않았어도 아래 명령으로 서버와 APK 다운로드를 확인할 수 있습니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\test-apk.ps1
+```
+
+USB 디버깅을 허용한 공기계를 PC에 연결했다면 아래 명령은 최신 APK를 내려받아 설치하고 앱을 실행합니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\test-apk.ps1 -Install
+```
+
 ### 6. PC 브라우저에서 상대 테스트 계정을 만듭니다
 
 1. PC 브라우저에서 `http://127.0.0.1:3000`이 아니라 2단계의 PC 주소를 엽니다. 예: `http://192.168.x.x:3000`
