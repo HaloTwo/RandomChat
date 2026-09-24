@@ -1236,6 +1236,16 @@ public final class MainActivity extends Activity {
         row.addView(bubble, new LinearLayout.LayoutParams(-2, -2)); messagesView.addView(row, new LinearLayout.LayoutParams(-1, -2));
     }
 
+    // 개별 대화 화면의 버블을 한 곳에서 만들고, 폴링으로 들어온 메시지도 같은 형태로 붙인다.
+    private void addConversationBubble(LinearLayout parent, JSONObject message) {
+        boolean mine = message.optBoolean("mine");
+        LinearLayout row = new LinearLayout(this); row.setGravity(mine ? Gravity.RIGHT : Gravity.LEFT); row.setPadding(0, dp(4), 0, dp(4));
+        LinearLayout bubbleStack = new LinearLayout(this); bubbleStack.setOrientation(LinearLayout.VERTICAL); bubbleStack.setGravity(mine ? Gravity.RIGHT : Gravity.LEFT);
+        TextView bubble = new TextView(this); bubble.setText(message.optString("body")); bubble.setTextSize(16); bubble.setTextColor(mine ? COLOR_BG : COLOR_TEXT); bubble.setPadding(dp(14), dp(10), dp(14), dp(10)); bubble.setBackground(round(mine ? COLOR_BLUE : COLOR_FIELD, 18)); bubbleStack.addView(bubble);
+        TextView meta = new TextView(this); meta.setText(mine ? (message.optBoolean("read") ? "읽음  ✓✓" : "전송됨  ✓") : ""); meta.setTextColor(COLOR_MUTED); meta.setTextSize(11); meta.setPadding(dp(4), dp(2), dp(4), 0); bubbleStack.addView(meta);
+        row.addView(bubbleStack); parent.addView(row);
+    }
+
     // 대화 목록을 벗어나 방을 열 때만 메시지 입력과 전송 영역을 보여 준다.
     private void showRoomConversation(String id) {
         roomId = id;
@@ -1252,14 +1262,10 @@ public final class MainActivity extends Activity {
                 screen.addView(top, new LinearLayout.LayoutParams(-1, -2));
                 ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
                 LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); body.setPadding(dp(8), dp(8), dp(8), dp(12)); scroll.addView(body);
+                final java.util.HashSet<String> renderedMessageIds = new java.util.HashSet<>();
                 if (messages != null) for (int i = 0; i < messages.length(); i++) {
                     JSONObject message = messages.optJSONObject(i); if (message == null) continue;
-                    boolean mine = message.optBoolean("mine");
-                    LinearLayout row = new LinearLayout(this); row.setGravity(mine ? Gravity.RIGHT : Gravity.LEFT); row.setPadding(0, dp(4), 0, dp(4));
-                    LinearLayout bubbleStack = new LinearLayout(this); bubbleStack.setOrientation(LinearLayout.VERTICAL); bubbleStack.setGravity(mine ? Gravity.RIGHT : Gravity.LEFT);
-                    TextView bubble = new TextView(this); bubble.setText(message.optString("body")); bubble.setTextSize(16); bubble.setTextColor(mine ? COLOR_BG : COLOR_TEXT); bubble.setPadding(dp(14), dp(10), dp(14), dp(10)); bubble.setBackground(round(mine ? COLOR_BLUE : COLOR_FIELD, 18)); bubbleStack.addView(bubble);
-                    TextView meta = new TextView(this); meta.setText(mine ? (message.optBoolean("read") ? "읽음  ✓✓" : "전송됨  ✓") : ""); meta.setTextColor(COLOR_MUTED); meta.setTextSize(11); meta.setPadding(dp(4), dp(2), dp(4), 0); bubbleStack.addView(meta);
-                    row.addView(bubbleStack); body.addView(row);
+                    renderedMessageIds.add(message.optString("id")); addConversationBubble(body, message);
                 }
                 if (room.optBoolean("peerTyping")) label(body, "상대가 입력 중입니다…");
                 screen.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
@@ -1276,9 +1282,12 @@ public final class MainActivity extends Activity {
                 });
                 Button send = compactButton("➤", () -> background(() -> {
                     String text = compose.getText().toString().trim(); if (text.isEmpty()) throw new IllegalArgumentException("메시지를 입력하세요.");
-                    json("POST", "/api/rooms/" + id + "/messages", new JSONObject().put("body", text).put("clientId", UUID.randomUUID().toString()));
+                    JSONObject sent = json("POST", "/api/rooms/" + id + "/messages", new JSONObject().put("body", text).put("clientId", UUID.randomUUID().toString()));
                     json("POST", "/api/rooms/" + id + "/typing", new JSONObject().put("typing", false));
-                    runOnUiThread(() -> { if (conversation[0] != null) conversation[0].dismiss(); showRoomConversation(id); }); refresh();
+                    JSONObject local = new JSONObject().put("id", sent.optString("id")).put("body", text).put("mine", true).put("read", false);
+                    runOnUiThread(() -> {
+                        renderedMessageIds.add(local.optString("id")); addConversationBubble(body, local); compose.setText(""); scroll.fullScroll(View.FOCUS_DOWN);
+                    }); refresh();
                 })); send.setTextSize(21); send.setTextColor(COLOR_BG); send.setBackground(round(COLOR_BLUE, 26)); composeRow.addView(send, new LinearLayout.LayoutParams(dp(58), dp(52)));
                 screen.addView(composeRow, new LinearLayout.LayoutParams(-1, -2));
                 conversation[0] = fullScreenDialog(screen);
@@ -1291,6 +1300,22 @@ public final class MainActivity extends Activity {
                             runOnUiThread(conversation[0]::dismiss); refresh();
                         })).show();
                 });
+                final Runnable[] refreshConversation = new Runnable[1];
+                refreshConversation[0] = () -> background(() -> {
+                    JSONObject current = json("GET", "/api/rooms/" + id, null);
+                    runOnUiThread(() -> {
+                        if (conversation[0] == null || !conversation[0].isShowing()) return;
+                        JSONArray incoming = current.optJSONArray("messages"); boolean added = false;
+                        if (incoming != null) for (int i = 0; i < incoming.length(); i++) {
+                            JSONObject message = incoming.optJSONObject(i); if (message == null || renderedMessageIds.contains(message.optString("id"))) continue;
+                            renderedMessageIds.add(message.optString("id")); addConversationBubble(body, message); added = true;
+                        }
+                        if (added) scroll.fullScroll(View.FOCUS_DOWN);
+                        storyHandler.postDelayed(refreshConversation[0], 2000);
+                    });
+                });
+                conversation[0].setOnDismissListener(ignored -> storyHandler.removeCallbacks(refreshConversation[0]));
+                storyHandler.postDelayed(refreshConversation[0], 2000);
                 scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
             });
         });
