@@ -433,7 +433,9 @@ public final class MainActivity extends Activity {
 
         referenceFeed = referencePanel(pages);
         LinearLayout feedTop = referenceHeader("●", "", "게시물", "◉", () -> showVisitorsScreen());
-        feedTop.getChildAt(0).setOnClickListener(view -> refresh()); referenceFeed.addView(feedTop);
+        feedTop.getChildAt(0).setOnClickListener(view -> refresh());
+        Button feedRequests = compactButton("ϟ", this::showReceivedRequestsScreen); feedRequests.setTextSize(23); feedRequests.setBackgroundColor(Color.TRANSPARENT); feedTop.addView(feedRequests, new LinearLayout.LayoutParams(dp(42), dp(50)));
+        referenceFeed.addView(feedTop);
         HorizontalScrollView storyScroll = new HorizontalScrollView(this); storyScroll.setHorizontalScrollBarEnabled(false);
         storiesView = new LinearLayout(this); storiesView.setOrientation(LinearLayout.HORIZONTAL); storyScroll.addView(storiesView);
         referenceFeed.addView(storyScroll, new LinearLayout.LayoutParams(-1, dp(106)));
@@ -470,10 +472,8 @@ public final class MainActivity extends Activity {
         TextView arrow = new TextView(this); arrow.setText("›"); arrow.setTextColor(COLOR_TEXT); arrow.setTextSize(34); profileCard.addView(arrow);
         profileCard.setOnClickListener(view -> showProfileEditor()); referenceAccount.addView(profileCard);
         referenceAccountRows = column(referenceAccount);
+        addReferenceRow(referenceAccountRows, "내 활동 보기", "내가 작성한 게시물과 댓글", this::showMyActivity);
         addReferenceRow(referenceAccountRows, "내 프로필 조회자", "내 프로필을 확인한 사용자", this::showVisitorsScreen);
-        addReferenceToggle(referenceAccountRows, "접속 시간 비공개", "presencePrivate");
-        addReferenceToggle(referenceAccountRows, "위치 비공개", "locationPrivate");
-        addReferenceToggle(referenceAccountRows, "나이 비공개", "agePrivate");
         addReferenceRow(referenceAccountRows, "프로필 사진 관리", "연결 수락 뒤 상대에게 공개", this::pickProfilePhoto);
         ownProfilePhotosView = column(referenceAccountRows);
 
@@ -485,10 +485,9 @@ public final class MainActivity extends Activity {
 
         LinearLayout bottom = new LinearLayout(this); bottom.setGravity(Gravity.CENTER); bottom.setPadding(dp(10), dp(5), dp(10), dp(9)); bottom.setBackground(round(COLOR_PANEL, 28));
         loungeTab = tabButton(bottom, "▤\n게시물", () -> selectTab("feed"));
-        visitorsTab = tabButton(bottom, "♥\n활동", () -> selectTab("activity"));
         chatTab = tabButton(bottom, "●\n대화", () -> selectTab("chat"));
         profileTab = tabButton(bottom, "♙\n프로필", () -> selectTab("profile"));
-        loungeTab.setTextSize(11); visitorsTab.setTextSize(11); chatTab.setTextSize(11); profileTab.setTextSize(11);
+        loungeTab.setTextSize(11); chatTab.setTextSize(11); profileTab.setTextSize(11);
         root.addView(bottom, new LinearLayout.LayoutParams(-1, -2));
         setContentView(root);
         refreshAccountHeader();
@@ -507,9 +506,9 @@ public final class MainActivity extends Activity {
     private void selectReferenceTab(String tab) {
         String selected = "lounge".equals(tab) ? "feed" : tab;
         if ("visitors".equals(selected)) { showVisitorsScreen(); return; }
-        boolean feed = "feed".equals(selected), activity = "activity".equals(selected), chat = "chat".equals(selected);
-        referenceFeed.setVisibility(feed ? View.VISIBLE : View.GONE); referenceActivity.setVisibility(activity ? View.VISIBLE : View.GONE); referenceChats.setVisibility(chat ? View.VISIBLE : View.GONE); referenceAccount.setVisibility(!feed && !activity && !chat ? View.VISIBLE : View.GONE);
-        styleTab(loungeTab, feed); styleTab(visitorsTab, activity); styleTab(chatTab, chat); styleTab(profileTab, !feed && !activity && !chat);
+        boolean feed = "feed".equals(selected), chat = "chat".equals(selected);
+        referenceFeed.setVisibility(feed ? View.VISIBLE : View.GONE); referenceActivity.setVisibility(View.GONE); referenceChats.setVisibility(chat ? View.VISIBLE : View.GONE); referenceAccount.setVisibility(!feed && !chat ? View.VISIBLE : View.GONE);
+        styleTab(loungeTab, feed); styleTab(chatTab, chat); styleTab(profileTab, !feed && !chat);
     }
     private void addReferenceRow(LinearLayout parent, String title, String detail, Runnable action) {
         LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(dp(16), dp(12), dp(14), dp(12)); row.setBackground(round(COLOR_FIELD, 18));
@@ -561,9 +560,9 @@ public final class MainActivity extends Activity {
                 else for (int i = 0; i < requests.length(); i++) { JSONObject request = requests.optJSONObject(i); if (request == null) continue;
                     String room = request.optString("roomId"); LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.VERTICAL); row.setPadding(dp(14), dp(14), dp(14), dp(12)); row.setBackground(round(COLOR_FIELD, 18));
                     LinearLayout first = new LinearLayout(this); first.setGravity(Gravity.CENTER_VERTICAL); TextView avatar = new TextView(this); avatar.setText("●"); avatar.setTextColor("male".equals(request.optString("gender")) ? COLOR_BLUE : COLOR_PINK); avatar.setTextSize(28); first.addView(avatar, new LinearLayout.LayoutParams(dp(42), dp(40)));
-                    TextView name = new TextView(this); name.setText(request.optString("nickname", "익명 사용자")); name.setTextColor(COLOR_TEXT); name.setTextSize(17); name.setTypeface(null, Typeface.BOLD); first.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
+                    TextView name = new TextView(this); name.setText("익명 사용자"); name.setTextColor(COLOR_TEXT); name.setTextSize(17); name.setTypeface(null, Typeface.BOLD); first.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
                     TextView time = new TextView(this); time.setText(relativeTime(request.optLong("createdAt"))); time.setTextColor(COLOR_MUTED); time.setTextSize(12); first.addView(time); row.addView(first);
-                    TextView message = new TextView(this); message.setText("계속 대화하고 싶어요."); message.setTextColor(COLOR_TEXT); message.setTextSize(15); message.setPadding(dp(42), dp(4), 0, dp(10)); row.addView(message);
+                    TextView message = new TextView(this); message.setText(request.optString("initialMessage").isEmpty() ? "요청 메시지가 없습니다." : request.optString("initialMessage")); message.setTextColor(COLOR_TEXT); message.setTextSize(15); message.setPadding(dp(42), dp(4), 0, dp(10)); row.addView(message);
                     LinearLayout actions = new LinearLayout(this); actions.setGravity(Gravity.RIGHT); Button reject = compactButton("거절", () -> background(() -> { json("POST", "/api/rooms/" + room + "/request/decision", new JSONObject().put("decision", "reject")); runOnUiThread(() -> { dialog[0].dismiss(); showReceivedRequestsScreen(); }); })); Button accept = compactButton("수락", () -> background(() -> { json("POST", "/api/rooms/" + room + "/request/decision", new JSONObject().put("decision", "accept")); runOnUiThread(() -> { dialog[0].dismiss(); selectTab("chat"); showRoomConversation(room); }); refresh(); })); accept.setTextColor(COLOR_BG); accept.setBackground(round(COLOR_BLUE, 14)); actions.addView(reject, new LinearLayout.LayoutParams(dp(78), dp(42))); actions.addView(accept, new LinearLayout.LayoutParams(dp(78), dp(42))); row.addView(actions);
                     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.topMargin = dp(8); list.addView(row, params);
                 }
@@ -677,6 +676,44 @@ public final class MainActivity extends Activity {
         return new JSONObject(new String(request(method, path, bytes, "application/json"), StandardCharsets.UTF_8));
     }
     // 피드와 대화는 작은 팝업이 아니라 앱 화면을 덮는 전용 화면으로 연다.
+    // 랜덤 대화의 종료·요청 선택은 화면 아래에서 명확히 고르게 한다.
+    private android.app.Dialog bottomSheet(LinearLayout content) {
+        android.app.Dialog dialog = new android.app.Dialog(this);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+        dialog.setContentView(content);
+        dialog.setCanceledOnTouchOutside(true);
+        dialog.show();
+        android.view.Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(COLOR_PANEL));
+            window.setGravity(Gravity.BOTTOM);
+            window.setLayout(-1, -2);
+        }
+        return dialog;
+    }
+
+    private void showConnectionRequestComposer(String id) {
+        EditText input = dialogInput("첫 메시지를 입력하세요", false);
+        new android.app.AlertDialog.Builder(this).setTitle("계속 대화 요청").setMessage("오늘 무료 요청 2회를 먼저 사용합니다.")
+            .setView(input).setNegativeButton("취소", null).setPositiveButton("요청 보내기", (dialog, which) -> background(() -> {
+                String message = input.getText().toString().trim(); if (message.isEmpty()) throw new IllegalArgumentException("첫 메시지를 입력하세요.");
+                json("POST", "/api/rooms/" + id + "/request", new JSONObject().put("message", message));
+                notice("대화 요청을 보냈습니다."); refresh();
+            })).show();
+    }
+
+    private void showRandomExitOptions(String id, android.app.Dialog conversation) {
+        LinearLayout sheet = new LinearLayout(this); sheet.setOrientation(LinearLayout.VERTICAL); sheet.setPadding(dp(20), dp(18), dp(20), dp(22)); sheet.setBackgroundColor(COLOR_PANEL);
+        TextView title = new TextView(this); title.setText("랜덤 대화"); title.setTextColor(COLOR_TEXT); title.setTextSize(20); title.setTypeface(null, Typeface.BOLD); sheet.addView(title);
+        TextView description = new TextView(this); description.setText("나가면 랜덤 대화 기록은 대화 목록에 남지 않습니다."); description.setTextColor(COLOR_MUTED); description.setTextSize(14); description.setPadding(0, dp(5), 0, dp(14)); sheet.addView(description);
+        final android.app.Dialog[] popup = new android.app.Dialog[1];
+        Button request = compactButton("계속 대화 요청", () -> { popup[0].dismiss(); showConnectionRequestComposer(id); }); request.setTextColor(COLOR_BG); request.setBackground(round(COLOR_BLUE, 16)); sheet.addView(request, new LinearLayout.LayoutParams(-1, dp(50)));
+        Button block = compactButton("차단하고 나가기", () -> background(() -> { json("POST", "/api/rooms/" + id + "/block", null); runOnUiThread(() -> { popup[0].dismiss(); conversation.dismiss(); }); refresh(); })); block.setTextColor(COLOR_PINK); block.setBackground(round(COLOR_FIELD, 16)); LinearLayout.LayoutParams blockParams = new LinearLayout.LayoutParams(-1, dp(50)); blockParams.topMargin = dp(8); sheet.addView(block, blockParams);
+        Button leave = compactButton("그냥 나가기", () -> background(() -> { json("POST", "/api/rooms/" + id + "/leave", null); runOnUiThread(() -> { popup[0].dismiss(); conversation.dismiss(); }); refresh(); })); leave.setTextColor(COLOR_TEXT); leave.setBackground(round(COLOR_FIELD, 16)); LinearLayout.LayoutParams leaveParams = new LinearLayout.LayoutParams(-1, dp(50)); leaveParams.topMargin = dp(8); sheet.addView(leave, leaveParams);
+        Button cancel = compactButton("취소", () -> popup[0].dismiss()); cancel.setTextColor(COLOR_MUTED); cancel.setBackgroundColor(Color.TRANSPARENT); sheet.addView(cancel, new LinearLayout.LayoutParams(-1, dp(46)));
+        popup[0] = bottomSheet(sheet);
+    }
+
     private android.app.Dialog fullScreenDialog(View content) {
         android.app.Dialog dialog = new android.app.Dialog(this);
         dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
@@ -951,6 +988,25 @@ public final class MainActivity extends Activity {
         }).show();
     }
 
+    // 게시물 메뉴는 작성자 여부에 따라 실제 가능한 작업만 보여 준다.
+    private void showPostMenu(JSONObject post, android.app.Dialog parent) {
+        String id = post.optString("id");
+        if (post.optBoolean("mine")) {
+            new android.app.AlertDialog.Builder(this).setItems(new String[] { "게시물 삭제" }, (dialog, which) ->
+                new android.app.AlertDialog.Builder(this).setTitle("게시물을 삭제할까요?").setMessage("댓글도 함께 삭제되며 되돌릴 수 없습니다.")
+                    .setNegativeButton("취소", null).setPositiveButton("삭제", (confirm, ignored) -> background(() -> {
+                        json("DELETE", "/api/posts/" + id, null);
+                        runOnUiThread(() -> { parent.dismiss(); notice("게시물을 삭제했습니다."); }); refresh();
+                    })).show()).show();
+            return;
+        }
+        new android.app.AlertDialog.Builder(this).setItems(new String[] { "익명 쪽지 보내기", "차단하기", "신고하기" }, (dialog, which) -> {
+            if (which == 0) showNoteComposer("/api/posts/" + id + "/message");
+            else if (which == 1) background(() -> { json("POST", "/api/posts/" + id + "/block", null); runOnUiThread(parent::dismiss); refresh(); });
+            else showReportComposer("/api/posts/" + id + "/report");
+        }).show();
+    }
+
     private void showMyStoryMenu(String storyId, android.app.AlertDialog parent) {
         new android.app.AlertDialog.Builder(this).setItems(new String[] { "스토리 삭제" }, (dialog, which) -> background(() -> {
             json("DELETE", "/api/stories/" + storyId, null);
@@ -1074,18 +1130,44 @@ public final class MainActivity extends Activity {
                 screen.addView(commentBar, new LinearLayout.LayoutParams(-1, -2));
                 postScreen[0] = fullScreenDialog(screen);
                 back.setOnClickListener(ignored -> postScreen[0].dismiss());
-                options.setOnClickListener(ignored -> { if (post.optBoolean("mine")) background(() -> { json("DELETE", "/api/posts/" + id, null); runOnUiThread(() -> postScreen[0].dismiss()); refresh(); }); });
+                options.setOnClickListener(ignored -> showPostMenu(post, postScreen[0]));
             });
         });
     }
 
+    // 댓글과 한 단계 답글을 게시물 상세 안에서 바로 펼쳐 읽고 작성한다.
     private void addCommentRow(LinearLayout parent, JSONObject comment) {
         if (comment == null) return;
+        String commentId = comment.optString("id");
         LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.VERTICAL); row.setPadding(0, dp(14), 0, dp(8));
-        TextView text = new TextView(this); text.setText(("male".equals(comment.optString("gender")) ? "• " : "• ") + comment.optString("body")); text.setTextColor(COLOR_TEXT); text.setTextSize(17); row.addView(text);
-        Button reply = compactButton("◌ 대댓글  " + comment.optInt("replyCount"), () -> showReplies(comment)); reply.setTextColor(COLOR_MUTED); reply.setBackgroundColor(Color.TRANSPARENT);
+        LinearLayout first = new LinearLayout(this); first.setGravity(Gravity.CENTER_VERTICAL);
+        TextView marker = new TextView(this); marker.setText("•"); marker.setTextSize(26); marker.setTextColor("male".equals(comment.optString("gender")) ? COLOR_BLUE : COLOR_PINK); first.addView(marker, new LinearLayout.LayoutParams(dp(20), dp(30)));
+        TextView text = new TextView(this); text.setText(comment.optString("body")); text.setTextColor(COLOR_TEXT); text.setTextSize(17); first.addView(text, new LinearLayout.LayoutParams(0, -2, 1f)); row.addView(first);
+        LinearLayout replies = new LinearLayout(this); replies.setOrientation(LinearLayout.VERTICAL); replies.setPadding(dp(24), dp(4), 0, 0); row.addView(replies);
+        Button reply = compactButton("↳ 답글 " + comment.optInt("replyCount"), () -> loadRepliesInline(replies, commentId)); reply.setTextColor(COLOR_MUTED); reply.setBackgroundColor(Color.TRANSPARENT);
         row.addView(reply, new LinearLayout.LayoutParams(-2, dp(34)));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.topMargin = dp(6); parent.addView(row, params);
+    }
+
+    private void loadRepliesInline(LinearLayout container, String commentId) {
+        if (container.getChildCount() > 0) { container.removeAllViews(); return; }
+        background(() -> {
+            JSONArray replies = json("GET", "/api/comments/" + commentId + "/replies", null).optJSONArray("replies");
+            runOnUiThread(() -> {
+                container.removeAllViews();
+                if (replies != null) for (int i = 0; i < replies.length(); i++) {
+                    JSONObject item = replies.optJSONObject(i); if (item == null) continue;
+                    TextView line = new TextView(this); line.setText("↳ " + item.optString("body")); line.setTextColor(COLOR_TEXT); line.setTextSize(15); line.setPadding(0, dp(6), 0, dp(2)); container.addView(line);
+                }
+                EditText input = dialogInput("답글을 남겨주세요", false); input.setTextSize(14); LinearLayout compose = new LinearLayout(this); compose.setGravity(Gravity.CENTER_VERTICAL); compose.setPadding(0, dp(6), 0, 0); compose.addView(input, new LinearLayout.LayoutParams(0, dp(46), 1f));
+                Button cancel = compactButton("취소", container::removeAllViews); cancel.setTextColor(COLOR_MUTED); cancel.setBackgroundColor(Color.TRANSPARENT); compose.addView(cancel, new LinearLayout.LayoutParams(dp(54), dp(46)));
+                Button send = compactButton("↑", () -> background(() -> {
+                    String body = input.getText().toString().trim(); if (body.isEmpty()) throw new IllegalArgumentException("답글을 입력하세요.");
+                    json("POST", "/api/comments/" + commentId + "/replies", new JSONObject().put("body", body));
+                    runOnUiThread(() -> loadRepliesInline(container, commentId)); refresh();
+                })); send.setTextColor(COLOR_BG); send.setTextSize(20); send.setBackground(round(COLOR_BLUE, 22)); compose.addView(send, new LinearLayout.LayoutParams(dp(46), dp(46))); container.addView(compose);
+            });
+        });
     }
 
     private void showCommentComposer(String postId) {
@@ -1156,7 +1238,7 @@ public final class MainActivity extends Activity {
                 LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
                 Button close = compactButton("‹", () -> { }); close.setTextSize(34); close.setTextColor(COLOR_TEXT); close.setBackgroundColor(Color.TRANSPARENT); top.addView(close, new LinearLayout.LayoutParams(dp(52), dp(52)));
                 TextView title = new TextView(this); title.setText("대화"); title.setTextColor(COLOR_TEXT); title.setTextSize(20); title.setTypeface(null, Typeface.BOLD); title.setGravity(Gravity.CENTER); top.addView(title, new LinearLayout.LayoutParams(0, dp(52), 1f));
-                Button menu = compactButton("⋮", () -> roomAction("POST", "leave", null)); menu.setTextSize(26); menu.setBackgroundColor(Color.TRANSPARENT); top.addView(menu, new LinearLayout.LayoutParams(dp(52), dp(52)));
+                Button menu = compactButton("⋮", () -> { }); menu.setTextSize(26); menu.setBackgroundColor(Color.TRANSPARENT); top.addView(menu, new LinearLayout.LayoutParams(dp(52), dp(52)));
                 screen.addView(top, new LinearLayout.LayoutParams(-1, -2));
                 ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
                 LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); body.setPadding(dp(8), dp(8), dp(8), dp(12)); scroll.addView(body);
@@ -1191,6 +1273,14 @@ public final class MainActivity extends Activity {
                 screen.addView(composeRow, new LinearLayout.LayoutParams(-1, -2));
                 conversation[0] = fullScreenDialog(screen);
                 close.setOnClickListener(view -> conversation[0].dismiss());
+                menu.setOnClickListener(view -> {
+                    if ("random".equals(room.optString("status"))) showRandomExitOptions(id, conversation[0]);
+                    else new android.app.AlertDialog.Builder(this).setTitle("대화 나가기").setMessage("대화방을 종료할까요?")
+                        .setNegativeButton("취소", null).setPositiveButton("나가기", (dialog, which) -> background(() -> {
+                            json("POST", "/api/rooms/" + id + "/leave", null);
+                            runOnUiThread(conversation[0]::dismiss); refresh();
+                        })).show();
+                });
                 scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
             });
         });
@@ -1263,12 +1353,15 @@ public final class MainActivity extends Activity {
                 }
                 roomsView.removeAllViews();
                 if (rooms.length() == 0) label(roomsView, state.optBoolean("waiting") ? "상대를 기다리는 중" : "대화방 없음");
+                int persistentRoomCount = 0;
                 for (int i = 0; i < rooms.length(); i++) {
                     JSONObject room = rooms.optJSONObject(i);
-                    if (room == null) continue;
+                    if (room == null || !"connected".equals(room.optString("status"))) continue;
                     String id = room.optString("id");
                     addRoomCard(room, () -> showRoomConversation(id));
+                    persistentRoomCount++;
                 }
+                if (persistentRoomCount == 0 && rooms.length() > 0) label(roomsView, "계속 대화 중인 상대가 없습니다.");
                 ownProfilePhotosView.removeAllViews();
                 if (ownProfilePhotos.length() == 0) label(ownProfilePhotosView, "등록된 사진 없음");
                 for (int i = 0; i < ownProfilePhotos.length(); i++) {

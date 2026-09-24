@@ -978,7 +978,8 @@ function createApp(options = {}) {
       }
       if (pathname === '/api/requests/received' && req.method === 'GET') {
         expireRequests(db, now);
-        const requests = db.prepare(`SELECT r.room_id AS roomId, r.created_at AS createdAt, u.nickname, u.gender
+        const requests = db.prepare(`SELECT r.room_id AS roomId, r.created_at AS createdAt, u.gender,
+          COALESCE((SELECT m.body FROM messages m WHERE m.room_id = r.room_id AND m.sender_id = r.requester_id ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1), '') AS initialMessage
           FROM requests r JOIN users u ON u.id = r.requester_id AND u.deleted_at IS NULL
           WHERE r.receiver_id = ? AND r.status = 'pending' ORDER BY r.created_at DESC LIMIT 100`).all(user.id);
         return send(res, 200, { requests });
@@ -1140,6 +1141,9 @@ function createApp(options = {}) {
         return send(res, 200, { videos });
       }
       if (action === 'request' && req.method === 'POST') {
+        const input = await readJson(req);
+        const initialMessage = String(input.message || '').trim();
+        if (initialMessage.length > 500) throw httpError(400, '첫 메시지는 500자 이하로 입력하세요.');
         const result = transaction(db, () => {
           expireRequests(db, now);
           const current = roomFor(db, room.id, user.id);
@@ -1151,7 +1155,9 @@ function createApp(options = {}) {
           const id = uuid(), peerId = otherId(room, user.id);
           const expiresAt = Math.min(now + REQUEST_TTL_MS, nextKstMidnight(now));
           db.prepare("INSERT INTO requests(id,room_id,requester_id,receiver_id,status,quota_day,expires_at,created_at) VALUES (?,?,?,?,'pending',?,?,?)").run(id, room.id, user.id, peerId, q.day, expiresAt, now);
-          return { id, expiresAt };
+          // 새 앱은 첫 문구를 남기며, 빈 문구는 이전 앱 호환을 위해 요청 자체만 유지한다.
+          if (initialMessage) db.prepare('INSERT INTO messages(id,room_id,sender_id,client_id,body,created_at) VALUES (?,?,?,?,?,?)').run(uuid(), room.id, user.id, uuid(), initialMessage, now);
+          return { id, expiresAt, initialMessage };
         });
         return send(res, 201, result);
       }
