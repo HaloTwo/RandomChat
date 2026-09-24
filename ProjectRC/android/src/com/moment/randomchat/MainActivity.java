@@ -1048,6 +1048,16 @@ public final class MainActivity extends Activity {
             String title = post.optString("title").trim(), body = post.optString("body").trim();
             TextView titleView = new TextView(this); titleView.setText(title.isEmpty() ? body : title); titleView.setTextColor(COLOR_TEXT); titleView.setTextSize(21); titleView.setTypeface(null, Typeface.BOLD); row.addView(titleView);
             if (!title.isEmpty()) { TextView preview = new TextView(this); preview.setText(body); preview.setTextColor(COLOR_TEXT); preview.setTextSize(16); preview.setMaxLines(2); preview.setPadding(0, dp(8), 0, 0); row.addView(preview); }
+            if (post.optBoolean("hasImage")) {
+                ImageView previewImage = new ImageView(this); previewImage.setAdjustViewBounds(true); previewImage.setScaleType(ImageView.ScaleType.CENTER_CROP); previewImage.setBackground(round(COLOR_FIELD, 12));
+                LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(-1, dp(188)); imageParams.topMargin = dp(12); row.addView(previewImage, imageParams);
+                String postId = post.optString("id");
+                background(() -> {
+                    byte[] bytes = request("GET", "/api/posts/" + postId + "/image", null, null);
+                    Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                    runOnUiThread(() -> previewImage.setImageBitmap(bitmap));
+                });
+            }
             TextView author = new TextView(this); author.setText(("male".equals(post.optString("gender")) ? "• " : "• ") + relativeTime(post.optLong("createdAt"))); author.setTextColor(COLOR_MUTED); author.setTextSize(13); author.setPadding(0, dp(12), 0, dp(8)); row.addView(author);
             TextView stats = new TextView(this); stats.setText("◉  " + post.optInt("viewCount") + "                         ◌  " + post.optInt("commentCount")); stats.setTextColor(COLOR_TEXT); stats.setTextSize(15); row.addView(stats);
             View divider = new View(this); divider.setBackgroundColor(COLOR_FIELD); LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, dp(1)); dividerParams.topMargin = dp(14); row.addView(divider, dividerParams);
